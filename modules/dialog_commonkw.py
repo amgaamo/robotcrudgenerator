@@ -1,10 +1,12 @@
 # modules/dialog_commonkw.py
 """
 Common Dialog Module for Adding Steps - Improved UI Design
+FIXED VERSION: ลบ Magic Trick ออกหมด, ใช้ Stable Key + Simple Logic
 """
 import streamlit as st
 import uuid
 import streamlit.components.v1 as components
+from .ui_common import ARGUMENT_PRESETS, ARGUMENT_PATTERNS
 
 # *** ลบ import ทั้งหมดที่ทำให้เกิด circular dependency ออก ***
 # *** จะ import ภายในฟังก์ชันแทน ***
@@ -368,7 +370,7 @@ def render_add_step_dialog_base(
     search_state_key: str = "kw_search_dialog_base",
     recently_used_state_key: str = "recently_used_keywords_base",
 ):
-    """Renders the improved dialog for adding steps"""
+    """Renders the improved dialog for adding steps - FIXED VERSION (No Magic Tricks)"""
     # Import functions here to avoid circular import
     from .test_flow_manager import categorize_keywords
     from .ui_common import (
@@ -410,7 +412,8 @@ def render_add_step_dialog_base(
             for i, arg_item in enumerate(selected_kw.get('args', [])):
                 clean_arg_name = arg_item.get('name', '').strip('${}')
                 if clean_arg_name:
-                    unique_key = f"{dialog_state_key}_{selected_kw['name'].replace(' ', '_')}_{clean_arg_name}_{i}"
+                    kw_name_safe = selected_kw['name'].replace(' ', '_').replace('/', '_').replace('(', '').replace(')', '')
+                    unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
                     form_input_keys_to_clean.append(unique_key)
         for key in form_input_keys_to_clean:
             if key in st.session_state: 
@@ -424,6 +427,17 @@ def render_add_step_dialog_base(
         verify_state_key = f"verify_table_assertions_{verify_ui_context_id}"
         if verify_state_key in st.session_state: 
             del st.session_state[verify_state_key]
+
+        # ✅ ลบค่า CSV Quick Insert
+        csv_keys = [
+            f"quick_csv_ds_{dialog_state_key}",
+            f"quick_csv_row_{dialog_state_key}",
+            f"quick_csv_col_{dialog_state_key}",
+            f"quick_csv_target_{dialog_state_key}",
+        ]
+        for key in csv_keys:
+            if key in st.session_state:
+                del st.session_state[key]
 
         st.rerun()
 
@@ -511,10 +525,111 @@ def render_add_step_dialog_base(
 
             # --- Standard Form for Other Keywords ---
             else:
-                form_key = f"step_form_{dialog_state_key}_{selected_kw['name'].replace(' ', '_')}"
+                # === CSV Quick Insert (ไม่ใช้ st.form) ===
+                with st.expander("📊 Quick Insert from CSV Data", expanded=False):
+                    st.caption("Select value and target argument to insert")
+                    
+                    # Import extract function locally
+                    from .crud_generator.ui_crud import extract_csv_datasource_keywords
+                    csv_keywords = extract_csv_datasource_keywords(ws_state)
+                    
+                    if csv_keywords and selected_kw and selected_kw.get('args'):
+                        col_ds, col_row, col_column, col_target = st.columns([2, 1.5, 1.5, 2])
+                        
+                        with col_ds:
+                            quick_ds = st.selectbox(
+                                "Data Source",
+                                options=list(csv_keywords.keys()),
+                                key=f"quick_csv_ds_{dialog_state_key}"
+                            )
+                        
+                        quick_row_val = ""
+                        with col_row:
+                            quick_row_val = st.text_input(
+                                "Row Key",
+                                key=f"quick_csv_row_{dialog_state_key}",
+                                placeholder="e.g., robotapi"
+                            )
+                        
+                        quick_col = None
+                        headers = []
+                        if quick_ds:
+                            ds_info = csv_keywords.get(quick_ds, {})
+                            headers = ds_info.get('headers', [])
+                            
+                            if headers:
+                                with col_column:
+                                    if len(headers) > 1:
+                                        quick_col = st.selectbox(
+                                            "Column",
+                                            options=headers[1:], 
+                                            key=f"quick_csv_col_{dialog_state_key}"
+                                        )
+                        
+                        target_arg = None
+                        with col_target:
+                            text_args = []
+                            for arg_item in selected_kw.get('args', []):
+                                arg_name = arg_item.get('name', '').strip('${}')
+                                is_locator = any(s in arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'menu'])
+                                is_preset = arg_name in ARGUMENT_PRESETS
+                                if not is_locator and not is_preset:
+                                    text_args.append(arg_name)
+                            
+                            if text_args:
+                                target_arg = st.selectbox(
+                                    "Insert to →",
+                                    options=text_args,
+                                    key=f"quick_csv_target_{dialog_state_key}"
+                                )
+                            else:
+                                st.caption("_No text args_")
+                        
+                        # ✅ Preview และปุ่ม Insert (ไม่อยู่ใน form)
+                        preview_syntax = ""
+                        if quick_ds and target_arg and quick_row_val:
+                            ds_info = csv_keywords.get(quick_ds, {})
+                            ds_var = ds_info.get('ds_var', 'DATA')
+                            col_var = ds_info.get('col_var', 'COL')
+                            
+                            if len(headers) > 1 and quick_col:
+                                preview_syntax = f"${{{ds_var}['{quick_row_val}'][${{{col_var}.{quick_col}}}]}}"
+                            else:
+                                preview_syntax = f"${{{ds_var}['{quick_row_val}']}}"
+                            
+                            st.code(preview_syntax, language="robotframework")
+                            
+                            # ✅ ปุ่ม Insert ธรรมดา (ไม่ใช่ form_submit_button)
+                            if st.button("✅ Insert", type="primary", use_container_width=True, 
+                                        key=f"quick_csv_insert_btn_{dialog_state_key}"):
+                                if not target_arg:
+                                    st.warning("Please select a target argument 'Insert to →'")
+                                elif not quick_row_val:
+                                    st.warning("Please enter a 'Row Key'")
+                                elif preview_syntax:
+                                    # ✅ Insert ค่าลง session_state
+                                    kw_name_clean = selected_kw['name'].replace(' ', '_').replace('/', '_').replace('(', '').replace(')', '')
+                                    for i, arg_item in enumerate(selected_kw.get('args', [])):
+                                        arg_name = arg_item.get('name', '').strip('${}')
+                                        if arg_name == target_arg:
+                                            unique_key = f"{dialog_state_key}_{kw_name_clean}_{arg_name}_{i}"
+                                            st.session_state[unique_key] = preview_syntax
+                                            st.toast(f"✅ Inserted '{preview_syntax}' into '{target_arg}'", icon="✅")
+                                            st.rerun()  # ← Rerun เพื่อให้ widget แสดงค่าใหม่
+                                            break
+                    else:
+                        st.info("No CSV data sources found or this keyword has no arguments.")
+                
+                st.markdown("---")
+                
+                # === Main Form - ใช้ Stable Key เท่านั้น ===
+                kw_name_safe = selected_kw['name'].replace(' ', '_').replace('/', '_').replace('(', '').replace(')', '')
+                form_key = f"step_form_{dialog_state_key}_{kw_name_safe}"
+                
                 with st.form(key=form_key):
+                    # 🔴 START: บล็อกโค้ดสำหรับ "วาด" (Render) ที่หายไป 🔴
                     args_data = {}
-                    form_input_keys = []
+                    form_input_keys = [] # เก็บ Key สำหรับ Cleanup
                     
                     if selected_kw.get('args'):
                         for i, arg_item in enumerate(selected_kw.get('args', [])):
@@ -522,46 +637,142 @@ def render_add_step_dialog_base(
                             raw_arg_name = arg_info.get('name')
                             if not raw_arg_name: 
                                 continue
+                            
                             clean_arg_name = raw_arg_name.strip('${}')
                             arg_info['name'] = clean_arg_name
-                            unique_key = f"{dialog_state_key}_{selected_kw['name'].replace(' ', '_')}_{clean_arg_name}_{i}"
-                            form_input_keys.append(unique_key)
-                            current_form_value = st.session_state.get(unique_key)
-                            args_data[clean_arg_name] = render_argument_input(
-                                arg_info, ws_state, unique_key, current_value=current_form_value
+                            
+                            unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
+                            form_input_keys.append(unique_key) # เก็บ Base Key
+                            
+                            # ดึงค่าปัจจุบันจาก session_state (ที่อาจถูก set โดย CSV Quick Insert)
+                            current_value_in_state = st.session_state.get(unique_key)
+                            
+                            if current_value_in_state is not None:
+                                arg_info['default'] = current_value_in_state
+                            
+                            # วาด Input (ฟังก์ชันนี้จะเติม Suffix _default_text, _locator_select ฯลฯ ให้เอง)
+                            rendered_value = render_argument_input(
+                                arg_info, 
+                                ws_state, 
+                                unique_key,
+                                current_value=current_value_in_state
                             )
-
+                            # (เราไม่จำเป็นต้องใช้ rendered_value ที่นี่ เพราะ st.form จะจัดการ state เอง)
+                    
                     st.markdown("---")
-
-                    # Submit button inside form
+                    
+                    # 🔴 ปุ่ม Submit ที่หายไป 🔴
                     submitted_add = st.form_submit_button(
                         f"✅ Add Step to Workspace", 
                         type="primary", 
                         use_container_width=True
                     )
+                    # 🔴 END: สิ้นสุดบล็อกโค้ดที่หายไป 🔴
 
+                    # ▼▼▼ บล็อกโค้ดสำหรับ "ประมวลผล" (Logic) ที่คุณมีอยู่แล้ว (แต่ต้องอยู่ข้างใน if) ▼▼▼
                     if submitted_add:
-                        final_args_data = {}
+                        final_args_data = {} # ✅ สร้างตัวแปร (แก้ NameError)
+                        
                         if selected_kw.get('args'):
                             for i, arg_item in enumerate(selected_kw.get('args', [])):
-                                clean_arg_name = arg_item.get('name', '').strip('${}')
-                                if not clean_arg_name: 
+                                arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
+                                raw_arg_name = arg_info.get('name')
+                                if not raw_arg_name: 
                                     continue
-                                unique_key = f"{dialog_state_key}_{selected_kw['name'].replace(' ', '_')}_{clean_arg_name}_{i}"
-                                final_args_data[clean_arg_name] = st.session_state.get(unique_key, '')
+                                
+                                clean_arg_name = raw_arg_name.strip('${}')
+                                arg_info['name'] = clean_arg_name
+                                
+                                unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
+                                
+                                # --- START: NEW SMART KEY LOGIC ---
+                                final_value = None
+                                
+                                # Re-run the logic from ui_common.render_argument_input
+                                is_locator_arg = any(s in clean_arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'menu', 'header', 'body', 'theader', 'tbody'])
+                                
+                                if is_locator_arg:
+                                    final_value = st.session_state.get(f"{unique_key}_locator_select")
+                                elif clean_arg_name in ARGUMENT_PRESETS:
+                                    config = ARGUMENT_PRESETS[clean_arg_name]
+                                    input_type = config.get('type')
+                                    if input_type == "select_or_input":
+                                        selected = st.session_state.get(f"{unique_key}_select")
+                                        if selected == "📝 Other (custom)":
+                                            final_value = st.session_state.get(f"{unique_key}_custom")
+                                        else:
+                                            final_value = selected
+                                    else:
+                                        # 'boolean' or 'select'
+                                        final_value = st.session_state.get(unique_key)
+                                else:
+                                    # Check patterns
+                                    matched_pattern = False
+                                    arg_lower = clean_arg_name.lower()
+                                    for pattern_key in ARGUMENT_PATTERNS.keys():
+                                        if pattern_key in arg_lower:
+                                            final_value = st.session_state.get(unique_key)
+                                            matched_pattern = True
+                                            break
+                                    
+                                    # Default Text Input
+                                    if not matched_pattern:
+                                        final_value = st.session_state.get(f"{unique_key}_default_text")
+                                
+                                # Fallback to the original logic if new value is None
+                                if final_value is None:
+                                    final_value = st.session_state.get(unique_key, '') # Fallback
+                                    
+                                final_args_data[clean_arg_name] = final_value
+                                # --- END: NEW SMART KEY LOGIC ---
 
+                        # ✅ แก้ไข IndentationError
                         new_step = {
                             "id": str(uuid.uuid4()), 
                             "keyword": selected_kw['name'], 
                             "args": final_args_data
                         }
+                        
                         add_step_callback(context, new_step)
+                        
+                        # Cleanup
                         st.session_state[dialog_state_key] = False
                         if selected_kw_state_key in st.session_state: 
                             del st.session_state[selected_kw_state_key]
-                        for key in form_input_keys:
+                        
+                        # --- 🐞 FIX: แก้ไข Logic การลบ Key ---
+                        # (ต้องลบ Key ที่มี Suffix ด้วย)
+                        form_input_keys_to_clean_on_submit = []
+                        if selected_kw.get('args'):
+                            for i, arg_item in enumerate(selected_kw.get('args', [])):
+                                clean_arg_name = arg_item.get('name', '').strip('${}')
+                                if not clean_arg_name: continue
+                                
+                                unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
+                                
+                                # เพิ่ม Key ที่มี Suffix ที่เป็นไปได้ทั้งหมด
+                                form_input_keys_to_clean_on_submit.append(unique_key)
+                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_locator_select")
+                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_select")
+                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_custom")
+                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_default_text")
+
+                        for key in form_input_keys_to_clean_on_submit:
                             if key in st.session_state: 
                                 del st.session_state[key]
+                        # --- END FIX ---
+                        
+                        # ลบค่า CSV Quick Insert
+                        csv_keys = [
+                            f"quick_csv_ds_{dialog_state_key}",
+                            f"quick_csv_row_{dialog_state_key}",
+                            f"quick_csv_col_{dialog_state_key}",
+                            f"quick_csv_target_{dialog_state_key}",
+                        ]
+                        for key in csv_keys:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        
                         st.rerun()
 
         else:  # No keyword selected

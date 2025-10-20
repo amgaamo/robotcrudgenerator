@@ -30,67 +30,6 @@ ARGUMENT_PRESETS, ARGUMENT_PATTERNS = load_argument_presets()
 
 # --- Argument Input Rendering Functions (Moved from ui_test_flow.py) ---
 
-# (Helper for CSV popover - Keep it here as it's used by render_argument_input)
-def render_csv_variable_helper(arg_info, input_key, ws_state):
-    """
-    Renders a helper UI for inserting CSV variable syntax.
-    Returns the inserted text or None.
-    (Needs ws_state for extract_csv_datasource_keywords)
-    """
-    # Import locally to avoid potential circular dependency if extract_csv_datasource_keywords moves
-    from .crud_generator.ui_crud import extract_csv_datasource_keywords
-
-    # Extract available data sources
-    csv_keywords = extract_csv_datasource_keywords(ws_state)
-
-    if not csv_keywords:
-        return None
-
-    with st.popover("📊 Insert CSV Value", use_container_width=True):
-        st.caption("Select a data source and column to insert:")
-
-        selected_ds = st.selectbox(
-            "Data Source",
-            options=list(csv_keywords.keys()),
-            key=f"{input_key}_csv_ds_select"
-        )
-
-        if selected_ds:
-            ds_info = csv_keywords[selected_ds]
-            headers = ds_info.get('headers', [])
-
-            if headers:
-                row_key = st.text_input(
-                    "Row Key (e.g., 'robotapi')",
-                    key=f"{input_key}_csv_row_key",
-                    placeholder="Enter the key value"
-                )
-
-                selected_col = st.selectbox(
-                    "Column",
-                    options=headers[1:] if len(headers) > 1 else headers, # Adjust options based on headers length
-                    key=f"{input_key}_csv_col_select"
-                )
-
-                if st.button("✅ Insert", key=f"{input_key}_csv_insert_btn"):
-                    # Generate the variable syntax
-                    ds_var = ds_info['ds_var']
-                    col_var = ds_info['col_var']
-
-                    if len(headers) > 1:
-                        # Multi-column format - Using f-string interpolation correctly
-                        variable_syntax = f"${{{ds_var}['{row_key}'][${{{col_var}.{selected_col}}}]}}"
-                    else:
-                         # Single column format needs key only
-                        variable_syntax = f"${{{ds_var}['{row_key}']}}" # Corrected: Use row_key
-
-                    return variable_syntax
-            else:
-                 st.caption("No columns found for selected data source.")
-
-    return None
-
-
 def render_preset_input(arg_name, config, default_value, step_id_or_key_prefix):
     """
     Render input based on preset configuration
@@ -98,7 +37,7 @@ def render_preset_input(arg_name, config, default_value, step_id_or_key_prefix):
     """
     input_type = config.get('type')
     label = config.get('label', f"📝 {arg_name}")
-    key_base = f"{step_id_or_key_prefix}_{arg_name}" # Use prefix for unique keys
+    key_base = step_id_or_key_prefix    # Use prefix for unique keys
 
     if input_type == "boolean":
         default_bool = default_value.lower() == 'true' if isinstance(default_value, str) else bool(default_value)
@@ -198,7 +137,7 @@ def render_pattern_input(arg_name, config, default_value, step_id_or_key_prefix)
     input_type = config.get('type', 'text')
     label = config.get('label', f"📝 {arg_name}")
     placeholder = config.get('placeholder', '')
-    key = f"{step_id_or_key_prefix}_{arg_name}" # Use prefix for unique key
+    key = step_id_or_key_prefix   # Use prefix for unique key
 
     if input_type == "password":
         return st.text_input(
@@ -268,53 +207,21 @@ def render_argument_input(arg_info, ws_state, unique_key_prefix, current_value=N
 
     # Priority 2: Check if argument name matches preset (exact match)
     if arg_name in ARGUMENT_PRESETS:
-        # Use columns for preset input and potential CSV helper
-        col1, col2 = st.columns([4, 1])
-        with col1:
-             preset_value = render_preset_input(arg_name, ARGUMENT_PRESETS[arg_name], default_value, unique_key_prefix)
-        with col2:
-             # Add vertical space to align button better
-             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-             csv_value = render_csv_variable_helper(arg_info, unique_key_prefix, ws_state)
-             if csv_value:
-                 # Update the state of the *actual* input element (might be complex for select_or_input)
-                 # This part might need refinement depending on how render_preset_input sets state
-                 st.session_state[f"{unique_key_prefix}_{arg_name}"] = csv_value # Assuming base key works
-                 st.rerun()
-        return preset_value # Return the value from the preset input
+        return render_preset_input(arg_name, ARGUMENT_PRESETS[arg_name], default_value, unique_key_prefix)
 
     # Priority 3: Check pattern matching (partial match)
     arg_lower = arg_name.lower()
     for pattern_key, pattern_config in ARGUMENT_PATTERNS.items():
         if pattern_key in arg_lower:
-            # Use columns for pattern input and potential CSV helper
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                 pattern_value = render_pattern_input(arg_name, pattern_config, default_value, unique_key_prefix)
-            with col2:
-                 st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                 csv_value = render_csv_variable_helper(arg_info, unique_key_prefix, ws_state)
-                 if csv_value:
-                      st.session_state[f"{unique_key_prefix}_{arg_name}"] = csv_value
-                      st.rerun()
-            return pattern_value
+            return render_pattern_input(arg_name, pattern_config, default_value, unique_key_prefix)
 
     # Priority 4: Default - Text Input
-    col1, col2 = st.columns([4, 1])
-    with col1:
-         text_value = st.text_input(
-             f"📝 {arg_name}",
-             value=str(default_value) if default_value is not None else "",
-             key=f"{unique_key_prefix}_default_text", # Unique key
-             placeholder="Enter value or ${VARIABLE}"
-         )
-    with col2:
-         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-         csv_value = render_csv_variable_helper(arg_info, unique_key_prefix, ws_state)
-         if csv_value:
-             st.session_state[f"{unique_key_prefix}_default_text"] = csv_value
-             st.rerun()
-    return text_value
+    return st.text_input(
+        f"📝 {arg_name}",
+        value=str(default_value) if default_value is not None else "",
+        key=f"{unique_key_prefix}_default_text",
+        placeholder="Enter value or ${VARIABLE}"
+    )
 
 
 # --- Verify Table UI Functions (Moved from ui_test_flow.py) ---
@@ -491,3 +398,138 @@ def render_verify_table_arguments_for_dialog(ws_state, context, section_name, se
         if state_key_verify in st.session_state: del st.session_state[state_key_verify]
 
         st.rerun()
+
+# ======= CSV VALUE HELPER (SHARED) =======
+
+def get_available_csv_datasources(ws_state):
+    """
+    Extract CSV data sources from workspace (works for all modules).
+    
+    Returns:
+        dict: {ds_name: {ds_var, col_var, csv_filename, headers}}
+    """
+    from .crud_generator import manager  # Import here to avoid circular import
+    
+    result = {}
+    data_sources = ws_state.get('data_sources', [])
+    
+    for ds in data_sources:
+        ds_name = ds.get('name', '').upper()
+        csv_filename = ds.get('file_name', '')
+        col_var = ds.get('col_name', '')
+        
+        if not ds_name or not csv_filename:
+            continue
+        
+        # Get CSV headers
+        headers = manager.get_csv_headers(csv_filename)
+        
+        result[ds_name] = {
+            'ds_var': f"DS_{ds_name.replace(' ', '_')}",
+            'col_var': col_var if col_var else f"{ds_name.lower().replace(' ', '_')}",
+            'csv_filename': csv_filename,
+            'headers': headers if headers else []
+        }
+    
+    return result
+
+
+def render_csv_insert_button(input_key, ws_state, button_label="📊"):
+    """
+    Shared CSV value insertion popover button.
+    Use this next to ANY text_input in the app.
+    
+    Args:
+        input_key: The key of the text_input to insert value into
+        ws_state: Session state workspace
+        button_label: Button text/icon
+        
+    Returns:
+        str or None: Variable syntax if user clicked insert, else None
+        
+    Usage:
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            value = st.text_input("Value", key="my_value")
+        with col2:
+            st.markdown("<div style='margin-top: 1.8rem;'></div>", unsafe_allow_html=True)
+            inserted = render_csv_insert_button("my_value", ws_state)
+            if inserted:
+                st.session_state["my_value"] = inserted
+                # Note: In forms, this won't rerun until form submits
+    """
+    datasources = get_available_csv_datasources(ws_state)
+    
+    if not datasources:
+        st.caption("_No CSV_")
+        return None
+    
+    with st.popover(button_label, use_container_width=True):
+        st.markdown("**Insert from CSV**")
+        st.caption("Select data source and column")
+        
+        # Step 1: Select Data Source
+        selected_ds = st.selectbox(
+            "Data Source",
+            options=list(datasources.keys()),
+            key=f"{input_key}_csvpop_ds",
+            help="Choose which CSV to use"
+        )
+        
+        if not selected_ds:
+            return None
+            
+        ds_info = datasources[selected_ds]
+        headers = ds_info.get('headers', [])
+        
+        if not headers:
+            st.error("⚠️ No columns found in CSV")
+            return None
+        
+        # Step 2: Enter Row Key
+        row_key = st.text_input(
+            "Row Key",
+            key=f"{input_key}_csvpop_rowkey",
+            placeholder="e.g., robotapi",
+            help="Value from first column to identify the row"
+        )
+        
+        # Step 3: Select Column (if multi-column CSV)
+        selected_column = None
+        if len(headers) > 1:
+            selected_column = st.selectbox(
+                "Column",
+                options=headers[1:],  # Skip first column (key column)
+                key=f"{input_key}_csvpop_col",
+                help="Which column value to use"
+            )
+        
+        # Step 4: Generate Syntax and Preview
+        if row_key:
+            ds_var = ds_info['ds_var']
+            col_var = ds_info['col_var']
+            
+            # Generate syntax based on CSV structure
+            if len(headers) > 1 and selected_column:
+                # Multi-column: ${DS_LOGIN['robotapi'][${login_col.username}]}
+                variable_syntax = f"${{{ds_var}['{row_key}'][${{{col_var}.{selected_col}}}]}}"
+            else:
+                # Single column: ${DS_DATA['key']}
+                variable_syntax = f"${{{ds_var}['{row_key}']}}"
+            
+            # Show preview
+            st.markdown("**Preview:**")
+            st.code(variable_syntax, language="robotframework")
+            
+            # Insert button
+            if st.button(
+                "✅ Insert", 
+                key=f"{input_key}_csvpop_insert", 
+                type="primary", 
+                use_container_width=True
+            ):
+                return variable_syntax
+        else:
+            st.info("💡 Enter row key to continue")
+    
+    return None

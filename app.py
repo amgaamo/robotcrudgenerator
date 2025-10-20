@@ -819,7 +819,7 @@ def data_source_export_dialog(source, index):
         kw_code = (
             f"\n{kw_name}\n"
             f"    Import datasource file        ${{{var_name}}}\n"
-            f"    Set Global Variable           ${{{col_var}_col}}                  ${{value_col}}\n"
+            f"    Set Global Variable           ${{{col_var}}}                     ${{value_col}}\n"
             f"    Set Global Variable           ${{{ds_var}}}               ${{datasource_val}}"
         )
 

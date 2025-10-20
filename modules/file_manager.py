@@ -457,7 +457,7 @@ def parse_data_sources_from_resource(content: str):
                 if csv_var_match and ds_var_match and col_var_match:
                     csv_path_var_name = csv_var_match.group(1)
                     ds_name = ds_var_match.group(1)
-                    col_name = col_var_match.group(1).replace('_col', '')
+                    col_name = col_var_match.group(1)
 
                     # --- ✅ FIXED: Proper path cleaning and filename extraction ---
                     csv_file_name = "NOT_FOUND"

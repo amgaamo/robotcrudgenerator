@@ -11,10 +11,9 @@ import os
 import re
 from . import manager
 from ..session_manager import get_clean_locator_name
-from ..ui_test_flow import render_argument_input
+from ..ui_common import render_argument_input
 from ..test_flow_manager import categorize_keywords
 from ..dialog_commonkw import render_add_step_dialog_base
-from ..ui_components import render_csv_insert_button
 
 # ======= ENTRY POINT FUNCTION =======
 def render_crud_generator_tab():
@@ -525,7 +524,8 @@ def format_args_as_string(args_dict):
         return ""
     parts = []
     for k, v in args_dict.items():
-        if k == 'assertion_columns': continue # Skip this complex one
+        if k == 'assertion_columns': 
+            continue # Skip this complex one
 
         if isinstance(v, dict) and 'name' in v:
             val_str = get_clean_locator_name(v['name'])
@@ -534,13 +534,11 @@ def format_args_as_string(args_dict):
         else:
             continue # Skip empty/None values
 
-        if len(val_str) > 25:
-            val_str = val_str[:25] + "..."
+        # ไม่ truncate ค่าแต่ละตัว
         parts.append(f"{k}={val_str}")
 
+    # ไม่ truncate string ทั้งหมด แสดงครบ
     full_str = ", ".join(parts)
-    if len(full_str) > 100: # Truncate overall string if too long
-        full_str = full_str[:100] + "..."
     return full_str
 
 # ======= REVISED STEP CARD (V3.6) =======
@@ -699,28 +697,34 @@ def render_step_card_compact(step, index, section_key, ws):
         )
         selected_kw = next((kw for kw in all_kws if kw['name'] == selected_kw_name), None)
 
-        # --- Argument Inputs ---
-        new_args = {}
+        # --- Argument Inputs (FIXED LOGIC) ---
         temp_args_key = f"edit_temp_args_{step['id']}"
 
-        if temp_args_key not in st.session_state or st.session_state[edit_kw_state_key] != current_kw_name:
+        # Initialize or reset temp args state (Logic from ui_test_flow.py)
+        if temp_args_key not in st.session_state or st.session_state.get(edit_kw_state_key) != st.session_state.get(f"prev_kw_{step['id']}", ""):
             st.session_state[temp_args_key] = {}
             if selected_kw and selected_kw.get('args'):
-                current_args = step.get('args', {})
+                current_step_args = step.get('args', {})
                 for arg_item in selected_kw.get('args', []):
                     arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
                     clean_arg_name = arg_info.get('name', '').strip('${}')
                     if not clean_arg_name: 
                         continue
 
-                    if selected_kw_name == current_kw_name and clean_arg_name in current_args:
-                        initial_value = current_args[clean_arg_name]
+                    if selected_kw_name == current_kw_name and clean_arg_name in current_step_args:
+                        initial_value = current_step_args[clean_arg_name]
                     else:
                         initial_value = arg_info.get('default', '')
                     st.session_state[temp_args_key][clean_arg_name] = initial_value
+            st.session_state[f"prev_kw_{step['id']}"] = selected_kw_name
 
+        # Render argument inputs
         if selected_kw and selected_kw.get('args'):
             st.markdown("**Arguments:**")
+            
+            # This dict will capture the actual returned values from widgets
+            rendered_args_this_cycle = {} 
+            
             for arg_item in selected_kw.get('args', []):
                 arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
                 clean_arg_name = arg_info.get('name', '').strip('${}')
@@ -728,32 +732,35 @@ def render_step_card_compact(step, index, section_key, ws):
                     continue
                 arg_info['name'] = clean_arg_name
 
-                current_temp_value = st.session_state[temp_args_key].get(clean_arg_name, '')
-                arg_info['default'] = current_temp_value
-
+                # Get current value from the temp state to populate the widget
+                current_temp_value = st.session_state.get(temp_args_key, {}).get(clean_arg_name, arg_info.get('default', ''))
                 input_key = f"crud_edit_{step['id']}_{clean_arg_name}"
+                
+                # Render the widget and get its current value
                 rendered_value = render_argument_input(
                     arg_info,
                     ws_state,
-                    input_key
+                    input_key,
+                    current_value=current_temp_value # Pass current value
                 )
 
-                if input_key in st.session_state and st.session_state[input_key] != current_temp_value:
-                    st.session_state[temp_args_key][clean_arg_name] = st.session_state[input_key]
+                # Store the returned value from the widget
+                rendered_args_this_cycle[clean_arg_name] = rendered_value
 
-                new_args[clean_arg_name] = st.session_state[temp_args_key].get(clean_arg_name, '')
+            # Save the new values back to the temp state
+            st.session_state[temp_args_key] = rendered_args_this_cycle.copy()
 
         elif not selected_kw:
             st.warning("Selected keyword definition not found.")
 
-        # --- Save/Cancel Buttons ---
+        # --- Save/Cancel Buttons (FIXED LOGIC) ---
         st.markdown("---")
         col1, col2 = st.columns(2)
         with col1:
             if st.button("✅ Save Changes", key=f"save_edit_{step['id']}", use_container_width=True, type="primary"):
                 updated_data = {
                     "keyword": selected_kw_name,
-                    "args": new_args
+                    "args": st.session_state.get(temp_args_key, {}).copy() # Read from temp state
                 }
                 if 'type' in step: 
                     updated_data['type'] = step['type']
@@ -761,11 +768,15 @@ def render_step_card_compact(step, index, section_key, ws):
                     updated_data['config'] = step['config']
 
                 manager.update_step(real_section_key, step['id'], updated_data)
+                
+                # Cleanup states
                 st.session_state[edit_mode_key] = False
                 if edit_kw_state_key in st.session_state: 
                     del st.session_state[edit_kw_state_key]
                 if temp_args_key in st.session_state: 
                     del st.session_state[temp_args_key]
+                if f"prev_kw_{step['id']}" in st.session_state: 
+                    del st.session_state[f"prev_kw_{step['id']}"]
                 st.rerun()
         
         with col2:
@@ -775,67 +786,13 @@ def render_step_card_compact(step, index, section_key, ws):
                     del st.session_state[edit_kw_state_key]
                 if temp_args_key in st.session_state: 
                     del st.session_state[temp_args_key]
+                if f"prev_kw_{step['id']}" in st.session_state: 
+                    del st.session_state[f"prev_kw_{step['id']}"]
                 st.rerun()
 
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-
-def render_csv_variable_helper(arg_info, input_key):
-    """
-    Renders a helper UI for inserting CSV variable syntax.
-    Returns the inserted text or None.
-    """
-    ws_state = st.session_state.studio_workspace
-    
-    # Extract available data sources
-    csv_keywords = extract_csv_datasource_keywords(ws_state)
-    
-    if not csv_keywords:
-        return None
-    
-    with st.popover("📊 Insert CSV Value", use_container_width=True):
-        st.caption("Select a data source and column to insert:")
-        
-        selected_ds = st.selectbox(
-            "Data Source",
-            options=list(csv_keywords.keys()),
-            key=f"{input_key}_csv_ds_select"
-        )
-        
-        if selected_ds:
-            ds_info = csv_keywords[selected_ds]
-            headers = ds_info.get('headers', [])
-            
-            if headers:
-                row_key = st.text_input(
-                    "Row Key (e.g., 'robotapi')",
-                    key=f"{input_key}_csv_row_key",
-                    placeholder="Enter the key value"
-                )
-                
-                selected_col = st.selectbox(
-                    "Column",
-                    options=headers[1:] if len(headers) > 1 else headers,
-                    key=f"{input_key}_csv_col_select"
-                )
-                
-                if st.button("✅ Insert", key=f"{input_key}_csv_insert_btn"):
-                    # Generate the variable syntax
-                    ds_var = ds_info['ds_var']
-                    col_var = ds_info['col_var']
-                    
-                    if len(headers) > 1:
-                        # Multi-column format
-                        variable_syntax = f"${{{ds_var}['{row_key}'][${{{{login_col.{selected_col}}}}}]}}"
-                    else:
-                        # Single column format
-                        variable_syntax = f"${{{ds_var}['{row_key}']}}"
-                    
-                    return variable_syntax
-    
-    return None
 
 # ======= TABLE VERIFICATION UI =======
 def render_table_verification_ui(step, ws):
@@ -1136,9 +1093,10 @@ def extract_csv_datasource_keywords(ws_state):
     return result
 
 # ======= DIALOG: Fill Form =======
+# ======= DIALOG: Fill Form (FIXED - No Pending Logic) =======
 @st.dialog("จัดการฟอร์มทั้งหมด (Fill Form Fields)", width="large")
 def render_fill_form_dialog():
-    """(Chunked Expander Style)"""
+    """FIXED: ใช้ปุ่มธรรมดา + rerun แทน pending logic"""
     section_key = "action_detail"
     ws_state = st.session_state.studio_workspace
     all_locators = ws_state.get('locators', [])
@@ -1157,6 +1115,71 @@ def render_fill_form_dialog():
         manager.add_fill_form_step(section_key)
         st.rerun()
     st.markdown("---")
+
+    # === CSV Quick Insert (ไม่ใช้ pending logic) ===
+    with st.expander("📊 Quick Insert from CSV Data", expanded=False):
+        st.caption("Select a value to use in form fields below")
+        csv_keywords = extract_csv_datasource_keywords(ws_state)
+        
+        if csv_keywords:
+            quick_col1, quick_col2, quick_col3 = st.columns([2, 2, 2])
+            
+            with quick_col1:
+                quick_ds = st.selectbox(
+                    "Data Source",
+                    options=list(csv_keywords.keys()),
+                    key="quick_csv_ds_fill"
+                )
+            
+            if quick_ds:
+                ds_info = csv_keywords[quick_ds]
+                headers = ds_info.get('headers', [])
+                
+                if headers:
+                    with quick_col2:
+                        quick_row = st.text_input(
+                            "Row Key",
+                            key="quick_csv_row_fill",
+                            placeholder="e.g., robotapi"
+                        )
+                    
+                    with quick_col3:
+                        if len(headers) > 1:
+                            quick_col = st.selectbox(
+                                "Column",
+                                options=headers[1:],
+                                key="quick_csv_col_fill"
+                            )
+                        else:
+                            quick_col = None
+                    
+                    if quick_row:
+                        ds_var = ds_info['ds_var']
+                        col_var = ds_info['col_var']
+                        
+                        if len(headers) > 1 and quick_col:
+                            preview_syntax = f"${{{ds_var}['{quick_row}'][${{{col_var}.{quick_col}}}]}}"
+                        else:
+                            preview_syntax = f"${{{ds_var}['{quick_row}']}}"
+                        
+                        st.code(preview_syntax, language="robotframework")
+                        
+                        # ✅ ใช้ปุ่มธรรมดา + rerun
+                        if st.button("✅ Apply to All Empty Fields", type="primary", key="quick_csv_apply_fill_btn"):
+                            all_fill_steps = [s for s in manager._get_workspace()['steps']['action_detail'] 
+                                             if s['keyword'] == 'Fill in data form']
+                            
+                            for step in all_fill_steps:
+                                step_id = step['id']
+                                current_value = step['args'].get('value', '')
+                                if not current_value:
+                                    # Update ค่าลง session_state ตรงๆ
+                                    st.session_state[f"val_{step_id}"] = preview_syntax
+                            
+                            st.toast(f"✅ Applied '{preview_syntax}' to empty fields!", icon="✅")
+                            st.rerun()  # ← Rerun เพื่อแสดงค่าใหม่
+        else:
+            st.info("No CSV data sources found. Add them in Test Data tab.")
 
     with st.form(key="fill_form_chunked_editor"):
         all_fill_steps = [s for s in manager._get_workspace()['steps'][section_key] if s['keyword'] == 'Fill in data form']
@@ -1189,7 +1212,8 @@ def render_fill_form_dialog():
         with st.container():
             for i, chunk in enumerate(chunks):
                 if len(chunk) == 0: continue
-                if search_query: label = f"Search Results ({len(chunk)} fields found)"
+                if search_query: 
+                    label = f"Search Results ({len(chunk)} fields found)"
                 else:
                     start_num = global_step_counter + 1
                     end_num = global_step_counter + len(chunk)
@@ -1205,7 +1229,8 @@ def render_fill_form_dialog():
                     st.markdown("---")
 
                     for step in chunk:
-                        step_args = step['args']; step_id = step['id']
+                        step_args = step['args']
+                        step_id = step['id']
                         form_data[step_id] = {}
                         cols = st.columns([0.4, 0.2, 0.4, 0.05])
 
@@ -1213,34 +1238,78 @@ def render_fill_form_dialog():
                             selected_loc_obj = step_args.get('locator_field')
                             loc_index = 0
                             if all_locators:
-                                try: loc_index = [loc.get('name') for loc in all_locators].index(selected_loc_obj.get('name'))
-                                except (ValueError, AttributeError): loc_index = 0
-                            form_data[step_id]['locator_field'] = st.selectbox("loc", all_locators, index=loc_index, format_func=format_locator,
-                                key=f"loc_{step_id}", label_visibility="collapsed")
+                                try: 
+                                    loc_index = [loc.get('name') for loc in all_locators].index(selected_loc_obj.get('name'))
+                                except (ValueError, AttributeError): 
+                                    loc_index = 0
+                            
+                            # ✅ รับค่าโดยตรงจาก return value
+                            form_data[step_id]['locator_field'] = st.selectbox(
+                                "loc", 
+                                all_locators, 
+                                index=loc_index, 
+                                format_func=format_locator,
+                                key=f"loc_{step_id}", 
+                                label_visibility="collapsed"
+                            )
+
                         with cols[1]:
                             current_type = 'Text'
-                            if step_args.get('is_switch_type'): current_type = 'Switch'
-                            elif step_args.get('is_checkbox_type'): current_type = 'Checkbox'
-                            try: type_index = ['Text', 'Select', 'Checkbox', 'Switch'].index(current_type)
-                            except ValueError: type_index = 0
-                            input_type = st.selectbox("type", ['Text', 'Select', 'Checkbox', 'Switch'], index=type_index,
-                                key=f"type_{step_id}", label_visibility="collapsed")
+                            if step_args.get('is_switch_type'): 
+                                current_type = 'Switch'
+                            elif step_args.get('is_checkbox_type'): 
+                                current_type = 'Checkbox'
+                            
+                            try: 
+                                type_index = ['Text', 'Select', 'Checkbox', 'Switch'].index(current_type)
+                            except ValueError: 
+                                type_index = 0
+                            
+                            # ✅ รับค่าโดยตรงจาก return value
+                            input_type = st.selectbox(
+                                "type", 
+                                ['Text', 'Select', 'Checkbox', 'Switch'], 
+                                index=type_index,
+                                key=f"type_{step_id}", 
+                                label_visibility="collapsed"
+                            )
                             form_data[step_id]['input_type'] = input_type
+
                         with cols[2]:
                             if input_type in ['Text', 'Select']:
-                                form_data[step_id]['value'] = st.text_input("val", value=step_args.get('value', ''),
-                                    key=f"val_{step_id}", label_visibility="collapsed")
+                                # ✅ ดึงค่าจาก session_state (อาจมาจาก CSV Apply)
+                                default_value = st.session_state.get(f"val_{step_id}", step_args.get('value', ''))
+                                
+                                # ✅ รับค่าโดยตรงจาก return value
+                                form_data[step_id]['value'] = st.text_input(
+                                    "val", 
+                                    value=default_value,
+                                    key=f"val_{step_id}", 
+                                    label_visibility="collapsed"
+                                )
+                                
                             elif input_type == 'Switch':
                                 selected_switch_loc_obj = step_args.get('locator_switch_checked')
                                 switch_loc_index = 0
                                 if all_locators:
-                                    try: switch_loc_index = [loc.get('name') for loc in all_locators].index(selected_switch_loc_obj.get('name'))
-                                    except (ValueError, AttributeError): switch_loc_index = 0
-                                form_data[step_id]['locator_switch_checked'] = st.selectbox("switch_loc", all_locators, index=switch_loc_index,
-                                    format_func=format_locator, key=f"switch_loc_{step_id}",
-                                    label_visibility="collapsed", help="เลือก Locator ที่ใช้สำหรับติ๊ก Switch")
+                                    try: 
+                                        switch_loc_index = [loc.get('name') for loc in all_locators].index(selected_switch_loc_obj.get('name'))
+                                    except (ValueError, AttributeError): 
+                                        switch_loc_index = 0
+                                
+                                # ✅ รับค่าโดยตรงจาก return value
+                                form_data[step_id]['locator_switch_checked'] = st.selectbox(
+                                    "switch_loc", 
+                                    all_locators, 
+                                    index=switch_loc_index,
+                                    format_func=format_locator, 
+                                    key=f"switch_loc_{step_id}",
+                                    label_visibility="collapsed", 
+                                    help="เลือก Locator ที่ใช้สำหรับติ๊ก Switch"
+                                )
                             else:
                                 st.caption("(No value needed)")
+
                         with cols[3]:
                             if st.checkbox("del", key=f"del_{step_id}", label_visibility="collapsed"):
                                 steps_to_delete.append(step_id)
@@ -1254,50 +1323,56 @@ def render_fill_form_dialog():
 
         if submitted_save:
             if steps_to_delete:
-                for step_id in steps_to_delete: manager.delete_step(section_key, step_id)
+                for step_id in steps_to_delete: 
+                    manager.delete_step(section_key, step_id)
+            
             updates_to_save = {}
             for step_id, data in form_data.items():
                 if step_id not in steps_to_delete:
-                    # Find the original step to preserve non-editable args
                     original_step = next((s for s in all_fill_steps if s['id'] == step_id), None)
                     if original_step:
-                         original_step_args = original_step.get('args', {})
-                         new_args_for_step = {
+                        original_step_args = original_step.get('args', {})
+                        new_args_for_step = {
                             "locator_field": data.get('locator_field'),
                             "value": data.get('value', ''),
                             "locator_switch_checked": data.get('locator_switch_checked'),
                             "is_checkbox_type": data.get('input_type') == 'Checkbox',
                             "is_switch_type": data.get('input_type') == 'Switch',
-                            # Preserve potentially existing args not edited here
                             "select_attribute": original_step_args.get('select_attribute', 'label'),
                             "is_ant_design": original_step_args.get('is_ant_design', False)
-                         }
-                         # Only update if args actually changed
-                         if new_args_for_step != original_step_args:
-                              updates_to_save[step_id] = new_args_for_step
+                        }
+                        
+                        if new_args_for_step != original_step_args:
+                            updates_to_save[step_id] = new_args_for_step
 
             if updates_to_save:
-                # Use batch update for efficiency if manager supports it, otherwise loop
                 if hasattr(manager, 'batch_update_step_args'):
-                     manager.batch_update_step_args(section_key, updates_to_save)
+                    manager.batch_update_step_args(section_key, updates_to_save)
                 else:
                     for step_id, new_args in updates_to_save.items():
                         manager.update_step_args(section_key, step_id, new_args)
 
             st.session_state.show_fill_form_dialog = False
-            if 'fill_form_search' in st.session_state: del st.session_state.fill_form_search
+            if 'fill_form_search' in st.session_state: 
+                del st.session_state.fill_form_search
+            
+            # Clear CSV states
+            csv_keys = [k for k in st.session_state.keys() if k.startswith('quick_csv_') and '_fill' in k]
+            for key in csv_keys:
+                del st.session_state[key]
+            
             st.rerun()
 
         if submitted_cancel:
             st.session_state.show_fill_form_dialog = False
-            if 'fill_form_search' in st.session_state: del st.session_state.fill_form_search
+            if 'fill_form_search' in st.session_state: 
+                del st.session_state.fill_form_search
             st.rerun()
 
-
-# ======= DIALOG: Verify Detail =======
+# ======= DIALOG: Verify Detail (FIXED - No Pending Logic) =======
 @st.dialog("จัดการฟอร์มตรวจสอบ (Verify Detail Fields)", width="large")
 def render_verify_detail_dialog():
-    """(Chunked Expander Style)"""
+    """FIXED: ใช้ปุ่มธรรมดา + rerun แทน pending logic"""
     section_key = "verify_detail"
     ws_state = st.session_state.studio_workspace
     all_locators = ws_state.get('locators', [])
@@ -1307,7 +1382,8 @@ def render_verify_detail_dialog():
     for step in action_fill_steps:
         locator_name = step['args'].get('locator_field', {}).get('name')
         value = step['args'].get('value')
-        if locator_name and value: expected_value_map[locator_name] = value
+        if locator_name and value: 
+            expected_value_map[locator_name] = value
 
     def format_locator(locator_obj):
         if isinstance(locator_obj, dict):
@@ -1322,14 +1398,92 @@ def render_verify_detail_dialog():
     if st.button("➕ เพิ่ม Field ตรวจสอบใหม่", use_container_width=True):
         kw_info = next((kw for kw in ws_state.get('keywords', []) if kw['name'] == 'Verify data form'), None)
         if kw_info:
-            new_step = { "id": str(uuid.uuid4()), "keyword": "Verify data form",
-                "args": { "locator_field": "", "expected_value": "", "select_attribute": "label" }}
+            new_step = {
+                "id": str(uuid.uuid4()), 
+                "keyword": "Verify data form",
+                "args": {
+                    "locator_field": "", 
+                    "expected_value": "", 
+                    "select_attribute": "label"
+                }
+            }
             manager.add_step(section_key, new_step)
             st.rerun()
         else:
             st.error("ไม่พบ Keyword 'Verify data form' ใน common keywords")
+    
     st.markdown("---")
-
+    
+    # === CSV Quick Insert (ไม่ใช้ pending logic) ===
+    with st.expander("📊 Quick Insert from CSV Data", expanded=False):
+        st.caption("Select expected value to verify")
+        csv_keywords = extract_csv_datasource_keywords(ws_state)
+        
+        if csv_keywords:
+            quick_col1, quick_col2, quick_col3 = st.columns([2, 2, 2])
+            
+            with quick_col1:
+                quick_ds = st.selectbox(
+                    "Data Source",
+                    options=list(csv_keywords.keys()),
+                    key="quick_csv_ds_verify"
+                )
+            
+            if quick_ds:
+                ds_info = csv_keywords[quick_ds]
+                headers = ds_info.get('headers', [])
+                
+                if headers:
+                    with quick_col2:
+                        quick_row = st.text_input(
+                            "Row Key",
+                            key="quick_csv_row_verify",
+                            placeholder="e.g., robotapi"
+                        )
+                    
+                    with quick_col3:
+                        if len(headers) > 1:
+                            quick_col = st.selectbox(
+                                "Column",
+                                options=headers[1:],
+                                key="quick_csv_col_verify"
+                            )
+                        else:
+                            quick_col = None
+                    
+                    if quick_row:
+                        ds_var = ds_info['ds_var']
+                        col_var = ds_info['col_var']
+                        
+                        if len(headers) > 1 and quick_col:
+                            preview_syntax = f"${{{ds_var}['{quick_row}'][${{{col_var}.{quick_col}}}]}}"
+                        else:
+                            preview_syntax = f"${{{ds_var}['{quick_row}']}}"
+                        
+                        st.code(preview_syntax, language="robotframework")
+                        
+                        # ✅ ใช้ปุ่มธรรมดา + rerun
+                        if st.button("✅ Apply to All Empty Fields", type="primary", key="quick_csv_apply_verify_btn"):
+                            all_verify_steps = [s for s in manager._get_workspace()['steps']['verify_detail'] 
+                                               if s['keyword'] == 'Verify data form']
+                            
+                            for step in all_verify_steps:
+                                step_id = step['id']
+                                current_value = step['args'].get('expected_value', '')
+                                
+                                if not current_value:
+                                    locator_name = step['args'].get('locator_field', {}).get('name', '')
+                                    # ถ้ายังไม่มีค่าจาก expected_value_map ก็ apply
+                                    if not expected_value_map.get(locator_name):
+                                        st.session_state[f"verify_val_{step_id}"] = preview_syntax
+                            
+                            st.toast(f"✅ Applied '{preview_syntax}' to empty fields!", icon="✅")
+                            st.rerun()  # ← Rerun เพื่อแสดงค่าใหม่
+        else:
+            st.info("No CSV data sources found. Add them in Test Data tab.")
+    
+    st.markdown("---")
+    
     with st.form(key="verify_detail_chunked_editor"):
         all_verify_steps = [s for s in manager._get_workspace()['steps'][section_key] if s['keyword'] == 'Verify data form']
         form_data = {}
@@ -1358,10 +1512,13 @@ def render_verify_detail_dialog():
 
         st.markdown('<div class="scrollable-dialog-container">', unsafe_allow_html=True)
         global_step_counter = 0
+        temp_locators = {}
+        
         with st.container():
             for i, chunk in enumerate(chunks):
                 if len(chunk) == 0: continue
-                if search_query: label = f"Search Results ({len(chunk)} fields found)"
+                if search_query: 
+                    label = f"Search Results ({len(chunk)} fields found)"
                 else:
                     start_num = global_step_counter + 1
                     end_num = global_step_counter + len(chunk)
@@ -1376,7 +1533,8 @@ def render_verify_detail_dialog():
                     st.markdown("---")
 
                     for step in chunk:
-                        step_args = step['args']; step_id = step['id']
+                        step_args = step['args']
+                        step_id = step['id']
                         form_data[step_id] = {}
                         cols = st.columns([0.5, 0.5, 0.05])
 
@@ -1384,21 +1542,44 @@ def render_verify_detail_dialog():
                             selected_loc_obj = step_args.get('locator_field')
                             loc_index = 0
                             if all_locators:
-                                try: loc_index = [loc.get('name') for loc in all_locators].index(selected_loc_obj.get('name'))
-                                except (ValueError, AttributeError): loc_index = 0
-                            selected_locator = st.selectbox("loc", all_locators, index=loc_index, format_func=format_locator,
-                                key=f"verify_loc_{step_id}", label_visibility="collapsed")
+                                try: 
+                                    loc_index = [loc.get('name') for loc in all_locators].index(selected_loc_obj.get('name'))
+                                except (ValueError, AttributeError): 
+                                    loc_index = 0
+                            
+                            # ✅ รับค่าและเก็บไว้ใน temp
+                            selected_locator = st.selectbox(
+                                "loc", 
+                                all_locators, 
+                                index=loc_index, 
+                                format_func=format_locator,
+                                key=f"verify_loc_{step_id}", 
+                                label_visibility="collapsed"
+                            )
+                            temp_locators[step_id] = selected_locator
                             form_data[step_id]['locator_field'] = selected_locator
+                        
                         with cols[1]:
-                            current_value = step_args.get('expected_value', '')
-                            # Auto-fill from expected_value_map if empty
+                            # ✅ ดึงค่าจาก session_state ก่อน (อาจมาจาก CSV Apply)
+                            current_value = st.session_state.get(f"verify_val_{step_id}")
+                            
+                            # ถ้ายังไม่มี ลอง auto-fill จาก expected_value_map
                             if not current_value:
-                                locator_name = selected_locator.get('name') if isinstance(selected_locator, dict) else ""
-                                current_value = expected_value_map.get(locator_name, '')
-                            form_data[step_id]['expected_value'] = st.text_input("val", value=current_value,
-                                key=f"verify_val_{step_id}", label_visibility="collapsed")
-                        with cols[2]:
-                            if st.checkbox("del", key=f"verify_del_{step_id}", label_visibility="collapsed"):
+                                current_value = step_args.get('expected_value', '')
+                                if not current_value and step_id in temp_locators:
+                                    locator_name = temp_locators[step_id].get('name') if isinstance(temp_locators[step_id], dict) else ""
+                                    current_value = expected_value_map.get(locator_name, '')
+                            
+                            # ✅ รับค่าโดยตรงจาก return value
+                            form_data[step_id]['expected_value'] = st.text_input(
+                                "val", 
+                                value=current_value,
+                                key=f"verify_val_{step_id}", 
+                                label_visibility="collapsed"
+                            )
+
+                        with cols[3]:
+                            if st.checkbox("del", key=f"del_verify_{step_id}", label_visibility="collapsed"):
                                 steps_to_delete.append(step_id)
 
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1410,39 +1591,46 @@ def render_verify_detail_dialog():
 
         if submitted_save:
             if steps_to_delete:
-                for step_id in steps_to_delete: manager.delete_step(section_key, step_id)
+                for step_id in steps_to_delete: 
+                    manager.delete_step(section_key, step_id)
+            
             updates_to_save = {}
             for step_id, data in form_data.items():
                 if step_id not in steps_to_delete:
-                     # Find the original step to preserve non-editable args
                     original_step = next((s for s in all_verify_steps if s['id'] == step_id), None)
                     if original_step:
-                         original_step_args = original_step.get('args', {})
-                         new_args_for_step = {
+                        original_step_args = original_step.get('args', {})
+                        new_args_for_step = {
                             "locator_field": data.get('locator_field'),
                             "expected_value": data.get('expected_value', ''),
-                            # Preserve potentially existing args not edited here
                             "select_attribute": original_step_args.get('select_attribute', 'label')
-                         }
-                         # Only update if args actually changed
-                         if new_args_for_step != original_step_args:
-                              updates_to_save[step_id] = new_args_for_step
+                        }
+                        
+                        if new_args_for_step != original_step_args:
+                            updates_to_save[step_id] = new_args_for_step
 
             if updates_to_save:
-                 # Use batch update for efficiency if manager supports it, otherwise loop
                 if hasattr(manager, 'batch_update_step_args'):
-                     manager.batch_update_step_args(section_key, updates_to_save)
+                    manager.batch_update_step_args(section_key, updates_to_save)
                 else:
                     for step_id, new_args in updates_to_save.items():
                         manager.update_step_args(section_key, step_id, new_args)
 
             st.session_state.show_verify_detail_dialog = False
-            if 'verify_form_search' in st.session_state: del st.session_state.verify_form_search
+            if 'verify_form_search' in st.session_state: 
+                del st.session_state.verify_form_search
+            
+            # Clear CSV states
+            csv_keys = [k for k in st.session_state.keys() if k.startswith('quick_csv_') and '_verify' in k]
+            for key in csv_keys:
+                del st.session_state[key]
+            
             st.rerun()
 
         if submitted_cancel:
             st.session_state.show_verify_detail_dialog = False
-            if 'verify_form_search' in st.session_state: del st.session_state.verify_form_search
+            if 'verify_form_search' in st.session_state: 
+                del st.session_state.verify_form_search
             st.rerun()
 
 
@@ -1617,7 +1805,20 @@ def inject_hybrid_css():
 
         /* Caption (Argument) Styling */
 
-        .step-card .stCaption { padding: 0.1rem 1rem 0.6rem 1rem; color: #8b949e; font-size: 0.8rem; font-family: 'SF Mono', 'Monaco', 'Courier New', monospace; line-height: 1.4; margin-top: -0.2rem; display: block; width: 100%; word-wrap: break-word; }
+        /* Caption (Argument) Styling */
+        .step-card .stCaption { 
+            padding: 0.1rem 1rem 0.6rem 1rem; 
+            color: #58a6ff; /* เปลี่ยนเป็นสีฟ้าเหมือน keyword */
+            font-size: 0.8rem; 
+            font-family: 'SF Mono', 'Monaco', 'Courier New', monospace; 
+            line-height: 1.4; 
+            margin-top: -0.2rem; 
+            display: block; 
+            width: 100%; 
+            word-wrap: break-word; 
+            white-space: normal; /* แสดงหลายบรรทัดได้ */
+            overflow-wrap: break-word; /* แบ่งคำยาวๆ */
+        }
 
         /* --- NEW: Inline Edit Section Styling --- */
         .crud-edit-section {
