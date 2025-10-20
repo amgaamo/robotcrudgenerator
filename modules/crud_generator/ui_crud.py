@@ -5,15 +5,16 @@ UI Module for the CRUD Generator Tab
 """
 import streamlit as st
 import uuid
-from . import manager
-from ..session_manager import get_clean_locator_name
-from ..ui_test_flow import render_argument_input
-from ..test_flow_manager import categorize_keywords
 import numpy as np
 import json
 import os 
 import re
-
+from . import manager
+from ..session_manager import get_clean_locator_name
+from ..ui_test_flow import render_argument_input
+from ..test_flow_manager import categorize_keywords
+from ..dialog_commonkw import render_add_step_dialog_base
+from ..ui_components import render_csv_insert_button
 
 # ======= ENTRY POINT FUNCTION =======
 def render_crud_generator_tab():
@@ -905,184 +906,94 @@ def render_sticky_preview(ws):
         st.metric("Main Steps", len(ws['steps'].get('action_list', []) + ws['steps'].get('action_detail', [])))
 
 
-# ======= DIALOG: Add New Step =======
-@st.dialog("Add New Step to CRUD Flow", width="large")
+# Wrapper function for CRUD Add Dialog
 def render_crud_add_step_dialog():
-    """Dialog (FIXED: Pulls categorized keywords)"""
-    ws_state = st.session_state.studio_workspace
+    ws_state = st.session_state.studio_workspace # Get workspace state
+
+    # Define the callback function for adding steps in CRUD Generator
+    def add_step_to_crud(context_dict, new_step):
+        section_key = context_dict.get("key")
+        if section_key:
+            manager.add_step(section_key, new_step)
+
+    # Define a filter function to exclude API/CSV keywords
+    def crud_keyword_filter(keyword):
+        kw_name = keyword.get('name', '').lower()
+        return not (kw_name.startswith('import datasource') or kw_name.startswith('request service'))
+
+    # Call the base function with CRUD specific parameters
     context = st.session_state.get('crud_add_dialog_context', {})
-    section_key = context.get("key")
-    if not section_key:
-        st.error("Error: Section context not found.")
-        return
-
-    # --- Load and categorize keywords ---
-    all_keywords_list = ws_state.get('keywords', [])
-    if all_keywords_list and 'categorized_keywords' not in ws_state:
-        ws_state['categorized_keywords'] = categorize_keywords(all_keywords_list)
-    categorized_keywords = ws_state.get('categorized_keywords', {})
-
-    if 'selected_kw_crud' not in st.session_state:
-        st.session_state.selected_kw_crud = None
-
-    st.info(f"Adding new step to: **{section_key.upper()}**")
-    left_col, right_col = st.columns([1, 1], gap="large")
-
-    with left_col:
-        st.markdown("### 🔍 Select Keyword")
-        search_query = st.text_input("Search", key="crud_kw_search_dialog", placeholder="Filter keywords...").lower()
-        if categorized_keywords:
-            for category, keywords in sorted(categorized_keywords.items()):
-                # Exclude API/CSV keywords from this dialog
-                filtered_kws = [
-                    kw for kw in keywords
-                    if search_query in kw['name'].lower()
-                    and not kw['name'].startswith('Import DataSource')
-                    and not kw['name'].startswith('Request Service')
-                ]
-                if filtered_kws:
-                    with st.expander(f"{category} ({len(filtered_kws)})", expanded=bool(search_query)):
-                        for kw in filtered_kws:
-                            if st.button(kw['name'], key=f"crud_btn_{kw['name']}", use_container_width=True):
-                                st.session_state.selected_kw_crud = kw
-                                st.rerun()
-        else:
-             st.warning("No keywords found in workspace.")
-
-    with right_col:
-        selected_kw = st.session_state.get('selected_kw_crud')
-        if selected_kw:
-            st.markdown(f"##### Configure: `{selected_kw['name']}`")
-
-            with st.form(key="crud_step_form"):
-                args_data = {}
-                if selected_kw.get('args'):
-                    for i, arg_item in enumerate(selected_kw.get('args', [])):
-                        arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
-                        clean_arg_name = arg_info.get('name', '').strip('${}')
-                        arg_info['name'] = clean_arg_name
-                        # Initialize default value for the form
-                        arg_info['default'] = arg_info.get('default', '')
-                        args_data[clean_arg_name] = render_argument_input(
-                            arg_info,
-                            ws_state,
-                            f"crud_dialog_{clean_arg_name}_{i}",
-                            # Pass current value if available, else default
-                            current_value=arg_info['default']
-                        )
-
-                st.markdown("---")
-                add_col, cancel_col = st.columns(2)
-                with add_col:
-                    submitted_add = st.form_submit_button("✅ Add Step", type="primary", use_container_width=True)
-                with cancel_col:
-                    submitted_cancel = st.form_submit_button("❌ Cancel", use_container_width=True)
-
-                if submitted_add:
-                    # Collect final values from form state
-                    final_args = {}
-                    if selected_kw.get('args'):
-                        for arg_item in selected_kw.get('args', []):
-                             clean_arg_name = arg_item.get('name', '').strip('${}')
-                             form_key = f"crud_dialog_{clean_arg_name}_{i}" # Reconstruct key used by render_argument_input
-                             if form_key in st.session_state:
-                                  final_args[clean_arg_name] = st.session_state[form_key]
-
-                    new_step = {"id": str(uuid.uuid4()), "keyword": selected_kw['name'], "args": final_args}
-                    manager.add_step(section_key, new_step)
-                    st.session_state.show_crud_add_dialog = False
-                    # Clean up session state
-                    if 'selected_kw_crud' in st.session_state: del st.session_state.selected_kw_crud
-                    if 'crud_add_dialog_context' in st.session_state: del st.session_state.crud_add_dialog_context
-                    # Clean up form input states
-                    if selected_kw.get('args'):
-                         for arg_item in selected_kw.get('args', []):
-                              clean_arg_name = arg_item.get('name', '').strip('${}')
-                              form_key = f"crud_dialog_{clean_arg_name}_{i}"
-                              if form_key in st.session_state: del st.session_state[form_key]
-                    st.rerun()
-
-                if submitted_cancel:
-                    st.session_state.show_crud_add_dialog = False
-                     # Clean up session state
-                    if 'selected_kw_crud' in st.session_state: del st.session_state.selected_kw_crud
-                    if 'crud_add_dialog_context' in st.session_state: del st.session_state.crud_add_dialog_context
-                    # Clean up form input states
-                    if selected_kw and selected_kw.get('args'):
-                         for arg_item in selected_kw.get('args', []):
-                              clean_arg_name = arg_item.get('name', '').strip('${}')
-                              form_key = f"crud_dialog_{clean_arg_name}_{i}"
-                              if form_key in st.session_state: del st.session_state[form_key]
-                    st.rerun()
-        else:
-            st.info("Select a keyword from the left to configure it.")
-            if st.button("❌ Close", use_container_width=True):
-                st.session_state.show_crud_add_dialog = False
-                # Clean up session state
-                if 'selected_kw_crud' in st.session_state: del st.session_state.selected_kw_crud
-                if 'crud_add_dialog_context' in st.session_state: del st.session_state.crud_add_dialog_context
-                st.rerun()
-
+    section_display_name = context.get('key', 'Unknown Section').upper()
+    render_add_step_dialog_base(
+        dialog_state_key='show_crud_add_dialog',
+        context_state_key='crud_add_dialog_context', # Pass the context key
+        selected_kw_state_key='selected_kw_crud',
+        add_step_callback=add_step_to_crud,
+        ws_state=ws_state,
+        title=f"Add New Step to CRUD Flow ({section_display_name})",
+        keyword_filter_func=crud_keyword_filter, # Apply the filter
+        search_state_key="kw_search_dialog_crud", # Unique key
+        recently_used_state_key="recently_used_keywords_crud" # Unique key
+    )
 
 # --- DIALOG: API/CSV Steps (UPDATED V3.10 - Stores Config) ---
 @st.dialog("Add Data Source or API Step", width="large")
 def render_api_csv_step_dialog():
     """
     Dialog to select and add CSV Data Source or API Service steps.
-    (V3.11 - Enhanced with value insertion)
+    (V3.11 - Enhanced with value insertion, Back button)
     """
     ws_state = st.session_state.studio_workspace
     context = st.session_state.get('api_csv_dialog_context', {})
     section_key = context.get("key")
-    
+
     if not section_key:
         st.error("Error: Section context not found.")
-        st.session_state.show_api_csv_dialog = False
+        st.session_state['show_api_csv_dialog'] = False
         st.rerun()
         return
 
-    # Get current selection
-    selection = st.session_state.get('csv_api_dialog_selection')
+    # --- Cleanup Logic Function ---
+    def close_dialog():
+        st.session_state['show_api_csv_dialog'] = False
+        if 'api_csv_dialog_context' in st.session_state:
+            del st.session_state['api_csv_dialog_context']
+        if 'csv_api_dialog_selection' in st.session_state:
+            del st.session_state['csv_api_dialog_selection']
+        st.rerun()
 
-    st.info(f"Adding step to: **{section_key.upper()}**")
+    # --- Back Button (Top Left) ---
+    st.markdown('<div class="dialog-back-button">', unsafe_allow_html=True) # Add CSS class wrapper
+    if st.button("← Back to Workspace", key="api_csv_dialog_back_button"):
+        close_dialog()
+    st.markdown('</div>', unsafe_allow_html=True) # Close CSS class wrapper
+    st.markdown("---") # Add a separator below the back button
+
+    # --- Dialog Content ---
+    selection = st.session_state.get('csv_api_dialog_selection')
+    st.info(f"Adding step to: **{section_key.upper()}**") # Keep info banner
     left_col, right_col = st.columns([1, 1], gap="large")
 
     # --- LEFT COLUMN (Selection) ---
     with left_col:
         st.markdown("### 🗃️ Available Data Sources")
-        
-        # Get data sources from workspace
         csv_keywords = extract_csv_datasource_keywords(ws_state)
-        
         if not csv_keywords:
             st.caption("⚠️ No Data Sources found. Add them in the 'Test Data' tab first.")
         else:
             with st.container(border=True):
                 for ds_name, ds_info in csv_keywords.items():
-                    # Show file name and column count
                     col_count = len(ds_info.get('headers', []))
-                    label = f"📊 {ds_name}"
-                    if col_count > 0:
-                        label += f" ({col_count} columns)"
-                    
-                    if st.button(
-                        label, 
-                        key=f"csv_ds_{ds_name.replace(' ', '_')}", 
-                        use_container_width=True
-                    ):
-                        st.session_state.csv_api_dialog_selection = {
-                            'type': 'csv',
-                            'ds_name': ds_name,
-                            'ds_info': ds_info
-                        }
+                    label = f"📊 {ds_name}" + (f" ({col_count} columns)" if col_count > 0 else "")
+                    # Use unique key combining type and name
+                    button_key = f"csv_ds_{ds_name.replace(' ', '_').replace('.', '_')}"
+                    if st.button(label, key=button_key, use_container_width=True):
+                        st.session_state.csv_api_dialog_selection = {'type': 'csv', 'ds_name': ds_name, 'ds_info': ds_info}
                         st.rerun()
 
         st.markdown("---")
         st.markdown("### 🌐 Available API Services")
-        
-        # Get API services from workspace
         api_services = ws_state.get('api_services', [])
-        
         if not api_services:
             st.caption("⚠️ No API Services found. Add them in the 'Test Data' tab first.")
         else:
@@ -1090,97 +1001,56 @@ def render_api_csv_step_dialog():
                 for service in api_services:
                     service_name = service.get('service_name', 'Untitled')
                     method = service.get('http_method', 'POST')
-                    
-                    if st.button(
-                        f"🔗 {service_name} ({method})", 
-                        key=f"api_svc_{service_name}", 
-                        use_container_width=True
-                    ):
-                        st.session_state.csv_api_dialog_selection = {
-                            'type': 'api',
-                            'service': service
-                        }
+                    # Use unique key combining type and name
+                    button_key = f"api_svc_{service_name.replace(' ', '_').replace('.', '_')}"
+                    if st.button(f"🔗 {service_name} ({method})", key=button_key, use_container_width=True):
+                        st.session_state.csv_api_dialog_selection = {'type': 'api', 'service': service}
                         st.rerun()
 
     # --- RIGHT COLUMN (Configuration & Add) ---
     with right_col:
-        def close_dialog():
-            st.session_state.show_api_csv_dialog = False
-            if 'api_csv_dialog_context' in st.session_state: 
-                del st.session_state.api_csv_dialog_context
-            if 'csv_api_dialog_selection' in st.session_state: 
-                del st.session_state.csv_api_dialog_selection
-            st.rerun()
-
         if not selection:
             st.info("👈 Select a Data Source or API Service from the left to configure.")
-            if st.button("❌ Close", use_container_width=True):
-                close_dialog()
-            return
+            # No redundant close button needed here
+            return # Exit if nothing is selected
 
         # --- CSV Data Source Configuration ---
         if selection['type'] == 'csv':
             ds_name = selection['ds_name']
             ds_info = selection['ds_info']
-            
             st.markdown(f"#### 📊 Configure: `{ds_name}`")
             st.caption("This will import the CSV data into your test.")
-            
-            # Show basic info
+
             with st.container(border=True):
                 st.markdown(f"**📁 File:** `{ds_info.get('csv_filename', 'N/A')}`")
                 st.markdown(f"**🔤 Variable Name:** `{ds_info['ds_var']}`")
                 st.markdown(f"**📋 Column Variable:** `{ds_info['col_var']}`")
-            
+
             headers = ds_info.get('headers', [])
-            
             if headers:
                 st.markdown("---")
                 st.markdown("**📊 Available Columns:**")
-                
-                # Display columns in a nice grid
                 cols_per_row = 3
                 for i in range(0, len(headers), cols_per_row):
                     cols = st.columns(cols_per_row)
                     for j, col in enumerate(cols):
                         if i + j < len(headers):
                             col.markdown(f"`{headers[i + j]}`")
-                
                 st.markdown("---")
                 st.markdown("**💡 Usage Examples:**")
                 st.caption("After importing, you can access data like this:")
-                
-                key_col = headers[0]
-                
-                # Show examples based on number of columns
+                key_col = headers[0] if headers else 'key_column' # Handle empty headers case
                 if len(headers) > 1:
                     example_col = headers[1]
-                    st.code(
-                        f"# Access specific value:\n"
-                        f"${{{ds_info['ds_var']}['row_key'][${{{ds_info['col_var']}.{example_col}}}]}}\n\n"
-                        f"# Example with actual key:\n"
-                        f"${{{ds_info['ds_var']}['robotapi'][${{{ds_info['col_var']}.{example_col}}}]}}",
-                        language="robotframework"
-                    )
+                    st.code(f"# Access specific value:\n${{{ds_info['ds_var']}['row_key'][${{{ds_info['col_var']}.{example_col}}}]}}\n\n# Example with actual key:\n${{{ds_info['ds_var']}['robotapi'][${{{ds_info['col_var']}.{example_col}}}]}}", language="robotframework")
                 else:
-                    st.code(
-                        f"# Access row by key:\n"
-                        f"${{{ds_info['ds_var']}['{key_col}']}}",
-                        language="robotframework"
-                    )
+                    st.code(f"# Access row by key:\n${{{ds_info['ds_var']}['{key_col}']}}", language="robotframework")
             else:
                 st.warning("⚠️ Could not read CSV headers. The file might be empty or invalid.")
 
             st.markdown("---")
-            
-            if st.button(
-                f"✅ Add Import Step for '{ds_name}'", 
-                type="primary", 
-                use_container_width=True
-            ):
-                # Create the keyword name
+            if st.button(f"✅ Add Import Step for '{ds_name}'", type="primary", use_container_width=True):
                 keyword_name = f"Import DataSource {ds_name}"
-                
                 new_step = {
                     "id": str(uuid.uuid4()),
                     "keyword": keyword_name,
@@ -1196,47 +1066,29 @@ def render_api_csv_step_dialog():
                 }
                 manager.add_step(section_key, new_step)
                 st.success(f"✅ Added '{keyword_name}' step!")
-                close_dialog()
+                close_dialog() # Close after adding
 
         # --- API Service Configuration ---
         elif selection['type'] == 'api':
             service = selection['service']
             service_name = service.get('service_name', 'Untitled')
-            
             st.markdown(f"#### 🔗 Configure: `{service_name}`")
-            
+
             with st.container(border=True):
                 st.markdown(f"**🔄 Method:** `{service.get('http_method', 'POST')}`")
                 st.markdown(f"**🌐 Endpoint:** `{service.get('endpoint_path', '/')}`")
-            
+
             args = service.get('analyzed_fields', {})
-            if args:
+            required_args = [name for name, data in args.items() if data.get('is_argument')]
+            if required_args:
                 st.markdown("**📝 Required Arguments:**")
-                with st.container(border=True):
-                    for arg_name, arg_data in args.items():
-                        if arg_data.get('is_argument'):
-                            st.caption(f"• `${{{arg_name}}}`")
+                st.caption(" ".join([f"`${{{a}}}`" for a in required_args])) # Use caption for less space
 
             st.markdown("---")
-            
-            if st.button(
-                f"✅ Add API Call for '{service_name}'", 
-                type="primary", 
-                use_container_width=True
-            ):
-                # Create keyword name
+            if st.button(f"✅ Add API Call for '{service_name}'", type="primary", use_container_width=True):
                 keyword_name = f"Request {service_name.replace('_', ' ').title()}"
-                
-                # Prepare default arguments
-                default_args = {
-                    'headeruser': '${USER_ADMIN}',
-                    'headerpassword': '${PASSWORD_ADMIN}'
-                }
-                
-                for arg_name, arg_data in service.get('analyzed_fields', {}).items():
-                    if arg_data.get('is_argument'):
-                        default_args[arg_name] = ''
-                
+                default_args = {'headeruser': '${USER_ADMIN}', 'headerpassword': '${PASSWORD_ADMIN}'}
+                default_args.update({arg: '' for arg in required_args}) # Add required args with empty default
                 new_step = {
                     "id": str(uuid.uuid4()),
                     "keyword": keyword_name,
@@ -1245,12 +1097,7 @@ def render_api_csv_step_dialog():
                 }
                 manager.add_step(section_key, new_step)
                 st.success(f"✅ Added '{keyword_name}' step!")
-                close_dialog()
-
-        # General Cancel Button
-        st.markdown("---")
-        if st.button("❌ Cancel", use_container_width=True):
-            close_dialog()
+                close_dialog() # Close after adding
 
 
 def extract_csv_datasource_keywords(ws_state):
@@ -1653,19 +1500,23 @@ def inject_hybrid_css():
         .step-header-content { display: flex; align-items: center; gap: 0.75rem; }
         /* Inline Step Number */
         .step-number-inline {
-            font-size: 1rem;
-            font-weight: 600;
-            color: #8b949e;
-            background-color: #21262d;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 0.25rem 0.5rem;
-            min-width: 28px;
-            height: 28px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #ffffff;
+            background: linear-gradient(135deg, #1f4788 0%, #0d2d5e 100%);
+            border: 1px solid #2d5a9e;
+            border-radius: 8px;
+            padding: 0.4rem 0.6rem;
+            min-width: 37px;
+            height: 37px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             line-height: 1;
+            box-shadow: 0 2px 8px rgba(15, 45, 94, 0.4),
+                        0 0 0 1px rgba(45, 90, 158, 0.5),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
         }
         /* Keyword Display */
         .step-keyword { display: flex; flex-direction: column; justify-content: center; gap: 0rem; }

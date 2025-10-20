@@ -30,7 +30,7 @@ from modules.keyword_categorizer import (
     get_expansion_config,
     get_category_priority
 )
-from modules.crud_generator.ui import render_crud_generator_tab
+from modules.crud_generator.ui_crud import render_crud_generator_tab
 
 # HTML Parser
 try:

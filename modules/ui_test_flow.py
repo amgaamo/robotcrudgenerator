@@ -8,6 +8,7 @@ from .test_flow_manager import categorize_keywords, generate_robot_script_from_t
 import json
 import os
 from pathlib import Path
+from .dialog_commonkw import render_add_step_dialog_base
 
 # ===== เพิ่มส่วนนี้ =====
 def load_argument_presets():
@@ -767,91 +768,162 @@ def inject_test_flow_css():
     """, unsafe_allow_html=True)
 
 def render_step_card(step, index, timeline_key, total_steps):
-    """Render enhanced step card with modern design and collapsible arguments"""
-    edit_mode = st.session_state.get(f'edit_mode_{step["id"]}', False)
-    expanded_key = f'expanded_{step["id"]}'
+    """Render enhanced step card with fixes for edit/expand and delete confirmation."""
+    ws_state = st.session_state.studio_workspace
+    step_id = step.get("id", f"step_{index}")
+    edit_mode_key = f'edit_mode_{step_id}'
+    expanded_key = f'expanded_{step_id}'
+    delete_confirm_key = f'delete_confirm_{step_id}'
+
+    # --- Ensure states exist with defaults ---
+    if edit_mode_key not in st.session_state:
+        st.session_state[edit_mode_key] = False
     if expanded_key not in st.session_state:
-        valid_args = {k: v for k, v in step.get('args', {}).items() if v}
-        st.session_state[expanded_key] = bool(valid_args)
+        valid_args_init = {k: v for k, v in step.get('args', {}).items() if v or v is False}
+        st.session_state[expanded_key] = bool(valid_args_init)
+    if delete_confirm_key not in st.session_state:
+        st.session_state[delete_confirm_key] = False
+
+    edit_mode = st.session_state[edit_mode_key]
+    is_expanded = st.session_state[expanded_key]
 
     st.markdown("<div class='step-card'>", unsafe_allow_html=True)
 
     # === CARD HEADER ===
-    num_col, kw_col, btn_col = st.columns([0.1, 0.55, 0.35], vertical_alignment="center")
+    with st.container():
+        num_col, kw_col, btn_col = st.columns([0.1, 0.55, 0.35], vertical_alignment="center")
 
-    with num_col:
-        # ทำให้ markdown เรียบง่ายขึ้น ไม่ต้องมี div จัดตำแหน่งซ้อนกัน
-        st.markdown(f"<div class='step-number'>{index + 1}</div>", unsafe_allow_html=True)
+        with num_col:
+            st.markdown(f"""
+                <div style='
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 48px;
+                    height: 48px;
+                    background: linear-gradient(135deg, #52627a 0%, #3d4c5f 50%, #2d3748 100%);
+                    border-radius: 10px;
+                    font-size: 1.4rem;
+                    font-weight: 700;
+                    color: #e2e8f0;
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4),
+                                0 1px 2px rgba(0, 0, 0, 0.3),
+                                0 0 0 1px rgba(148, 163, 184, 0.15),
+                                inset 0 1px 1px rgba(255, 255, 255, 0.1),
+                                inset 0 -2px 4px rgba(0, 0, 0, 0.3);
+                    position: relative;
+                    border: 1px solid rgba(71, 85, 105, 0.4);
+                    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+                '>
+                    {index + 1}
+                </div>
+            """, unsafe_allow_html=True)
 
-    with kw_col:
-        st.markdown(f"""
-        <div class='step-keyword'>
-            <div class='step-keyword-label'>KEYWORD</div>
-            <div class='step-keyword-name' style="color: #58a6ff;">{step.get('keyword', 'N/A')}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        with kw_col:
+            st.markdown(f"""
+            <div class='step-keyword'>
+                <div class='step-keyword-label' style='font-size: 0.8rem;'>KEYWORD</div>
+                <div class='step-keyword-name' style='font-size: 1.6rem;'>{step.get('keyword', 'N/A')}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-    with btn_col:
-        toolbar = st.container()
-        with toolbar:
-            st.markdown("<div class='step-card-toolbar'>", unsafe_allow_html=True)
-            btn_cols = st.columns([1, 1, 1, 1, 1, 1], gap="small")
+        with btn_col:
+            st.markdown("<div class='step-card-toolbar-wrapper'>", unsafe_allow_html=True)
+            action_cols = st.columns([1, 1, 1, 1, 1, 1], gap="small")
 
-            # สมมติว่ามีตัวแปรพวกนี้อยู่แล้ว
-            expand_icon = "🔽" if st.session_state.get("expanded_key", False) else "▶️"
-
-            with btn_cols[0]:
-                if st.button(label=" ", icon=expand_icon, key=f"expand_{step['id']}", help="Toggle details", use_container_width=True):
-                    st.session_state[expanded_key] = not st.session_state[expanded_key]
+            # === Expand/Collapse Button ===
+            with action_cols[0]:
+                expand_icon = "🔽" if is_expanded else "▶️"
+                button_key_expand = f"expand_{step_id}"
+                if st.button(expand_icon, key=button_key_expand, help="Toggle details", use_container_width=True):
+                    st.session_state[expanded_key] = not is_expanded
                     st.rerun()
 
-            with btn_cols[1]:
+            # === Move Up Button ===
+            with action_cols[1]:
                 is_first = (index == 0)
-                if st.button(label=" ", icon="⬆️", key=f"up_{step['id']}", help="Move up", use_container_width=True, disabled=is_first):
-                    st.session_state.studio_workspace[timeline_key].insert(index - 1, st.session_state.studio_workspace[timeline_key].pop(index))
+                button_key_up = f"up_{step_id}"
+                if st.button("⬆️", key=button_key_up, help="Move up", use_container_width=True, disabled=is_first):
+                    ws_state[timeline_key].insert(index - 1, ws_state[timeline_key].pop(index))
                     st.rerun()
 
-            with btn_cols[2]:
+            # === Move Down Button ===
+            with action_cols[2]:
                 is_last = (index == total_steps - 1)
-                if st.button(label=" ", icon="⬇️", key=f"down_{step['id']}", help="Move down", use_container_width=True, disabled=is_last):
-                    st.session_state.studio_workspace[timeline_key].insert(index + 1, st.session_state.studio_workspace[timeline_key].pop(index))
+                button_key_down = f"down_{step_id}"
+                if st.button("⬇️", key=button_key_down, help="Move down", use_container_width=True, disabled=is_last):
+                    ws_state[timeline_key].insert(index + 1, ws_state[timeline_key].pop(index))
                     st.rerun()
 
-            with btn_cols[3]:
-                if st.button(label=" ", icon="✏️", key=f"edit_{step['id']}", help="Edit", use_container_width=True):
-                    st.session_state[f'edit_mode_{step["id"]}'] = not edit_mode
-                    st.rerun()
+            # === Edit/Save Button - FIXED ===
+            with action_cols[3]:
+                if edit_mode:
+                    # ถ้าอยู่ใน edit mode แสดงปุ่ม Save
+                    if st.button("💾", key=f"save_{step_id}", help="Save Changes", use_container_width=True):
+                        # Logic บันทึกจะอยู่ในส่วน Edit Mode ด้านล่าง
+                        # ปุ่มนี้แค่สลับ state กลับไปเป็น False
+                        pass  # จะถูก handle ด้วยปุ่ม Save ในส่วน Edit Mode
+                else:
+                    # ถ้าไม่ได้อยู่ใน edit mode แสดงปุ่ม Edit
+                    if st.button("✏️", key=f"edit_{step_id}", help="Edit", use_container_width=True):
+                        st.session_state[edit_mode_key] = True
+                        st.session_state[expanded_key] = True  # Auto-expand เมื่อเข้า edit mode
+                        # Clear temp args
+                        temp_args_key = f"temp_args_{step_id}"
+                        if temp_args_key in st.session_state:
+                            del st.session_state[temp_args_key]
+                        if f"prev_kw_{step_id}" in st.session_state:
+                            del st.session_state[f"prev_kw_{step_id}"]
+                        st.rerun()
 
-            with btn_cols[4]:
-                if st.button(label=" ", icon="📋", key=f"copy_{step['id']}", help="Duplicate", use_container_width=True):
+            # === Duplicate Button ===
+            with action_cols[4]:
+                button_key_copy = f"copy_{step_id}"
+                if st.button("📋", key=button_key_copy, help="Duplicate", use_container_width=True):
                     new_step = step.copy()
                     new_step['id'] = str(uuid.uuid4())
-                    st.session_state.studio_workspace[timeline_key].insert(index + 1, new_step)
+                    ws_state[timeline_key].insert(index + 1, new_step)
                     st.rerun()
 
-            with btn_cols[5]:
-                if st.button(label=" ", icon="🗑️", key=f"del_{step['id']}", help="Delete", use_container_width=True):
-                    st.session_state.studio_workspace[timeline_key] = [
-                        s for s in st.session_state.studio_workspace[timeline_key] if s.get('id') != step['id']
-                    ]
-                    st.rerun()
+            # === Delete Button - WITH CONFIRMATION ===
+            with action_cols[5]:
+                if st.session_state[delete_confirm_key]:
+                    # Show confirm button
+                    if st.button("⚠️", key=f"del_confirm_{step_id}", help="Click again to confirm delete", use_container_width=True):
+                        # Delete the step
+                        ws_state[timeline_key] = [s for s in ws_state[timeline_key] if s.get('id') != step_id]
+                        # Clean up states
+                        if edit_mode_key in st.session_state:
+                            del st.session_state[edit_mode_key]
+                        if expanded_key in st.session_state:
+                            del st.session_state[expanded_key]
+                        if delete_confirm_key in st.session_state:
+                            del st.session_state[delete_confirm_key]
+                        temp_args_key = f"temp_args_{step_id}"
+                        if temp_args_key in st.session_state:
+                            del st.session_state[temp_args_key]
+                        if f"prev_kw_{step_id}" in st.session_state:
+                            del st.session_state[f"prev_kw_{step_id}"]
+                        st.rerun()
+                else:
+                    # Show normal delete button
+                    if st.button("🗑️", key=f"del_{step_id}", help="Delete (click twice to confirm)", use_container_width=True):
+                        st.session_state[delete_confirm_key] = True
+                        st.rerun()
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # === CARD BODY ===
-    # แสดง body เฉพาะเมื่อ expanded เท่านั้น
-    if st.session_state[expanded_key]:
+    # === CARD BODY (Show only if expanded) ===
+    if is_expanded:
         if not edit_mode:
+            # --- Display Mode ---
             st.markdown("<div class='step-body'>", unsafe_allow_html=True)
-            valid_args = {k: v for k, v in step.get('args', {}).items() if v}
-            
+            valid_args = {k: v for k, v in step.get('args', {}).items() if v or v is False}
             if valid_args:
                 st.markdown("<div class='args-section-title'><i class='fas fa-cog'></i>Arguments</div>", unsafe_allow_html=True)
                 args_html = "<div class='args-grid'>" + "".join([
-                    f"<div class='arg-card'>"
-                    f"<div class='arg-label'>{k}</div>"
-                    f"<div class='arg-value'>{str(v).replace('<', '&lt;').replace('>', '&gt;')}</div>"
-                    f"</div>"
+                    f"<div class='arg-card'><div class='arg-label'>{k}</div>"
+                    f"<div class='arg-value'>{str(v).lower() if isinstance(v, bool) else str(v).replace('<', '&lt;').replace('>', '&gt;')}</div></div>"
                     for k, v in valid_args.items()
                 ]) + "</div>"
                 st.markdown(args_html, unsafe_allow_html=True)
@@ -859,70 +931,103 @@ def render_step_card(step, index, timeline_key, total_steps):
                 st.markdown("<div class='args-grid'><div class='no-args'><i class='fas fa-inbox'></i>No arguments provided</div></div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
         else:
-            # Edit Mode
+            # --- Edit Mode ---
             st.markdown("<div class='edit-section'>", unsafe_allow_html=True)
-            ws_state = st.session_state.studio_workspace
-            if ws_state.get('keywords'):
+            
+            # Load categorized keywords
+            if 'categorized_keywords' not in ws_state and ws_state.get('keywords'):
+                from .test_flow_manager import categorize_keywords
                 ws_state['categorized_keywords'] = categorize_keywords(ws_state['keywords'])
+            
             categorized_keywords = ws_state.get('categorized_keywords', {})
             all_kws = [kw for kws in categorized_keywords.values() for kw in kws]
-            st.markdown("##### 🔧 Edit Step")
             all_kw_names = [kw['name'] for kw in all_kws]
-            current_index = all_kw_names.index(step.get('keyword')) if step.get('keyword') in all_kw_names else 0
-            selected_kw_name = st.selectbox("Select Keyword", all_kw_names, index=current_index, key=f"kw_select_{step['id']}")
+            
+            st.markdown("##### 🔧 Edit Step")
+            current_kw_name = step.get('keyword', '')
+            current_index = 0
+            try:
+                current_index = all_kw_names.index(current_kw_name)
+            except ValueError:
+                current_index = 0
+            
+            selected_kw_name = st.selectbox("Select Keyword", all_kw_names, index=current_index, key=f"kw_select_{step_id}")
             selected_kw = next((kw for kw in all_kws if kw['name'] == selected_kw_name), None)
+            
+            temp_args_key = f"temp_args_{step_id}"
 
-            if selected_kw: # ตรวจสอบแค่ว่ามี selected_kw หรือไม่
-                # =========================================================================
-                # ===== 🎯 START: MODIFICATION FOR 'Verify Result of data table' KEYWORD =====
-                # =========================================================================
-                if selected_kw_name.strip() == 'Verify Result of data table':
-                    # Use the specialized UI renderer for this keyword
-                    new_args = render_verify_table_arguments_for_edit_mode(
-                        ws_state=ws_state,
-                        unique_context_id=step['id'],
-                        current_args=step.get('args', {})
-                    )
-                else:
-                    # Use the original logic for all other keywords
-                    new_args = {}
-                    if selected_kw.get('args'):
-                        st.markdown("**Arguments:**")
-                        for i, arg_item in enumerate(selected_kw.get('args', [])):
-                            arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
-                            raw_arg_name = arg_info.get('name')
-                            if not raw_arg_name: continue
+            # Initialize or reset temp args state
+            if temp_args_key not in st.session_state or st.session_state.get(f"kw_select_{step_id}") != st.session_state.get(f"prev_kw_{step_id}", ""):
+                st.session_state[temp_args_key] = {}
+                if selected_kw and selected_kw.get('args'):
+                    current_step_args = step.get('args', {})
+                    for arg_item in selected_kw.get('args', []):
+                        arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
+                        clean_arg_name = arg_info.get('name', '').strip('${}')
+                        if not clean_arg_name:
+                            continue
+                        if selected_kw_name == current_kw_name and clean_arg_name in current_step_args:
+                            st.session_state[temp_args_key][clean_arg_name] = current_step_args[clean_arg_name]
+                        else:
+                            st.session_state[temp_args_key][clean_arg_name] = arg_info.get('default', '')
+                st.session_state[f"prev_kw_{step_id}"] = selected_kw_name
 
-                            clean_arg_name = raw_arg_name.strip('${}')
-                            arg_info['name'] = clean_arg_name
-                            
-                            current_val = step.get('args', {}).get(clean_arg_name, arg_info.get('default', ''))
-                            arg_info['default'] = current_val
+            # Render argument inputs
+            if selected_kw and selected_kw.get('args'):
+                from .ui_common import render_argument_input
+                st.markdown("**Arguments:**")
+                rendered_args_this_cycle = {}
+                for i, arg_item in enumerate(selected_kw.get('args', [])):
+                    arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
+                    raw_arg_name = arg_info.get('name')
+                    if not raw_arg_name:
+                        continue
+                    clean_arg_name = raw_arg_name.strip('${}')
+                    arg_info['name'] = clean_arg_name
+                    current_temp_value = st.session_state.get(temp_args_key, {}).get(clean_arg_name, arg_info.get('default', ''))
+                    input_key = f"edit_{step_id}_{clean_arg_name}"
+                    rendered_value = render_argument_input(arg_info, ws_state, input_key, current_value=current_temp_value)
+                    rendered_args_this_cycle[clean_arg_name] = rendered_value
+                st.session_state[temp_args_key] = rendered_args_this_cycle.copy()
+            elif not selected_kw:
+                st.warning("Selected keyword definition not found.")
 
-                            new_args[clean_arg_name] = render_argument_input(
-                                arg_info, ws_state, f"{step['id']}_{clean_arg_name}"
-                            )
-                # =======================================================================
-                # ===== 🎯 END: MODIFICATION FOR 'Verify Result of data table' KEYWORD =====
-                # =======================================================================
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+            
+            # === Save Button ===
+            with col1:
+                if st.button("✅ Save Changes", key=f"save_action_{step_id}", use_container_width=True, type="primary"):
+                    for i_save, s_save in enumerate(ws_state[timeline_key]):
+                        if s_save.get('id') == step_id:
+                            ws_state[timeline_key][i_save]['keyword'] = selected_kw_name
+                            ws_state[timeline_key][i_save]['args'] = st.session_state.get(temp_args_key, {}).copy()
+                            break
+                    st.session_state[edit_mode_key] = False
+                    if temp_args_key in st.session_state:
+                        del st.session_state[temp_args_key]
+                    if f"prev_kw_{step_id}" in st.session_state:
+                        del st.session_state[f"prev_kw_{step_id}"]
+                    st.rerun()
+            
+            # === Cancel Button ===
+            with col2:
+                if st.button("❌ Cancel", key=f"cancel_{step_id}", use_container_width=True):
+                    st.session_state[edit_mode_key] = False
+                    if temp_args_key in st.session_state:
+                        del st.session_state[temp_args_key]
+                    if f"prev_kw_{step_id}" in st.session_state:
+                        del st.session_state[f"prev_kw_{step_id}"]
+                    st.rerun()
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("✅ Save Changes", key=f"save_{step['id']}", use_container_width=True):
-                        for i, s in enumerate(st.session_state.studio_workspace[timeline_key]):
-                            if s['id'] == step['id']:
-                                st.session_state.studio_workspace[timeline_key][i]['keyword'] = selected_kw_name
-                                st.session_state.studio_workspace[timeline_key][i]['args'] = new_args
-                                break
-                        st.session_state[f'edit_mode_{step["id"]}'] = False
-                        st.rerun()
-                with col2:
-                    if st.button("❌ Cancel", key=f"cancel_{step['id']}", use_container_width=True):
-                        st.session_state[f'edit_mode_{step["id"]}'] = False
-                        st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
-    
+
     st.markdown("</div>", unsafe_allow_html=True)
+
+    # Reset delete confirmation after a delay (if not clicked)
+    if st.session_state[delete_confirm_key]:
+        # You can add a timer here or just let it reset on next rerun
+        pass
 
 def render_timeline_section(title, timeline_key, section_name):
     """Renders a collapsible section with card wrapper"""
@@ -949,213 +1054,27 @@ def render_timeline_section(title, timeline_key, section_name):
             st.rerun()
         st.markdown("</div></div>", unsafe_allow_html=True)
 
-@st.dialog("Add New Step", width="large")
+# Wrapper function for Test Flow Add Dialog
 def render_add_step_dialog():
-    """
-    Renders the dialog with the compact list design, now using the updated
-    icon set (⚡ for quick add, ⚙️ for configuration).
-    """
-
-    """
-    Renders the dialog, fixing the ghost button issue by adding
-    'position: relative' to the wrapper.
-    """
-
-    # --- 🎨 CSS ---
-    st.markdown("""
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display.swap');
-        .stApp {
-            font-family: 'Inter', sans-serif;
-        }
-        .info-banner {
-            background-color: #1e293b; padding: 0.75rem 1rem; border-radius: 8px;
-            margin-bottom: 1.5rem; border-left: 4px solid #6366f1;
-        }
-        .info-banner-title {
-            font-size: 0.8rem; color: #a1a1aa; font-weight: 600;
-            text-transform: uppercase; letter-spacing: 0.5px;
-        }
-        .info-banner-content { font-size: 1.1rem; color: #f4f4f5; font-weight: 700; }
-        
-        .placeholder-box {
-            text-align: center; padding: 3rem 2rem; color: #71717a;
-            background-color: #18181b; border: 2px dashed #3f3f46;
-            border-radius: 12px; margin-top: 1rem;
-        }
-
-        /* --- Style for the container of our custom button --- */
-        div[data-testid="stButton"] {
-            margin: 3px 0; /* Add vertical spacing between buttons */
-        }
-        
-        /* --- This is the core of the new method --- */
-        /* Target the actual <button> element */
-        div[data-testid="stButton"] > button {
-            display: flex;
-            align-items: center;
-            justify-content: flex-start; /* Align text to the left */
-            width: 100%;
-            padding: 0.6rem 1rem;
-            border-radius: 7px;
-            border: 1px solid #3f3f46;
-            background-color: #27272a;
-            color: #e4e4e7;
-            font-weight: 500;
-            font-size: 0.95rem;
-            text-align: left;
-            transition: all 0.2s ease-in-out;
-        }
-        
-        /* --- Hover and Active States for the button --- */
-        div[data-testid="stButton"] > button:hover {
-            border-color: #6366f1;
-            background-color: #3f3f46;
-            color: #ffffff;
-        }
-        
-        div[data-testid="stButton"] > button:focus:not(:active) {
-             border-color: #6366f1 !important;
-             box-shadow: 0 0 0 1px #6366f1 !important;
-        }
-
-        /* Style for the button when its keyword is selected */
-        .stButton button.active-keyword {
-             background-color: #4338ca; 
-             border-color: #818cf8; 
-             color: #ffffff;
-             box-shadow: 0 0 12px rgba(99, 102, 241, 0.25);
-        }
-
-    </style>
-    """, unsafe_allow_html=True)
-
-    # --- Python Logic ---
     ws_state = st.session_state.studio_workspace
-    timeline_key = st.session_state.get('add_dialog_timeline')
-    section_name = st.session_state.get('add_dialog_section')
+    timeline_key = st.session_state.get('add_dialog_timeline') # Get context directly
 
-    all_keywords_list = ws_state.get('keywords', [])
-    if all_keywords_list and 'categorized_keywords' not in ws_state:
-        ws_state['categorized_keywords'] = categorize_keywords(all_keywords_list)
-    categorized_keywords = ws_state.get('categorized_keywords', {})
-    keyword_map = {kw['name']: kw for kw in all_keywords_list}
+    # Define the callback function for adding steps in Test Flow
+    def add_step_to_timeline(context_timeline_key, new_step):
+        ws_state.setdefault(context_timeline_key, []).append(new_step)
 
-    if 'selected_kw' not in st.session_state: st.session_state.selected_kw = None
-    if 'recently_used_keywords' not in st.session_state: st.session_state.recently_used_keywords = []
-
-    st.markdown(f"""
-        <div class='info-banner'>
-            <div class='info-banner-title'>Adding to</div>
-            <div class='info-banner-content'>{section_name}</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-    left_col, right_col = st.columns([1, 1], gap="large")
-
-    with left_col:
-        st.markdown("### 🔍 Select Keyword")
-        search_query = st.text_input("Search", key="kw_search_dialog", placeholder="Type to filter keywords...", label_visibility="collapsed").lower()
-
-        # --- SIMPLIFIED RENDER FUNCTION ---
-        def render_keyword_row(kw, key_prefix):
-            has_args = bool(kw.get('args'))
-            icon = "⚡" if not has_args else "⚙️"
-            is_active = st.session_state.selected_kw and st.session_state.selected_kw['name'] == kw['name']
-            
-            # The button's label now includes the icon and text
-            button_label = f"{icon}  {kw['name']}"
-            
-            # Use a single st.button and apply a class if it's active
-            if st.button(button_label, key=f"{key_prefix}_kw_btn_{kw['name']}", use_container_width=True, type="secondary"):
-                if kw['name'] in st.session_state.recently_used_keywords:
-                    st.session_state.recently_used_keywords.remove(kw['name'])
-                st.session_state.recently_used_keywords.insert(0, kw['name'])
-                if not has_args:
-                    new_step = {"id": str(uuid.uuid4()), "keyword": kw['name'], "args": {}}
-                    ws_state.setdefault(timeline_key, []).append(new_step)
-                    st.session_state['show_add_dialog'] = False
-                    if 'selected_kw' in st.session_state: del st.session_state.selected_kw
-                    st.toast(f"✅ Step '{kw['name']}' added!", icon="🎉")
-                    st.rerun()
-                else:
-                    st.session_state.selected_kw = kw
-                    st.session_state['scroll_to_top'] = True 
-                    st.rerun()
-            
-            # A little trick to apply the 'active' style after the button is rendered
-            if is_active:
-                st.markdown(
-                    f'<style>.stButton button[data-testid="stButton-secondary-{key_prefix}_kw_btn_{kw["name"]}"] {{ background-color: #4338ca; border-color: #818cf8; color: #ffffff; }}</style>',
-                    unsafe_allow_html=True
-                )
-
-
-        recent_kws_names = st.session_state.recently_used_keywords[:3]
-        if recent_kws_names:
-            st.markdown("##### 📌 Recently Used")
-            for kw_name in recent_kws_names:
-                if kw := keyword_map.get(kw_name):
-                    render_keyword_row(kw, key_prefix="recent")
-            st.divider()
-        
-        st.markdown("##### All Keywords")
-        if not categorized_keywords:
-            st.warning("⚠️ No keywords loaded.")
-        else:
-            for category, keywords in sorted(categorized_keywords.items()):
-                filtered_kws = [kw for kw in keywords if search_query in kw['name'].lower()]
-                if filtered_kws:
-                    with st.expander(f"{category} ({len(filtered_kws)})", expanded=bool(search_query)):
-                        for kw in filtered_kws:
-                            render_keyword_row(kw, key_prefix="all")
+    # Call the base function with Test Flow specific parameters
+    render_add_step_dialog_base(
+        dialog_state_key='show_add_dialog',
+        context_state_key='add_dialog_timeline', # Pass the key itself
+        selected_kw_state_key='selected_kw',
+        add_step_callback=add_step_to_timeline,
+        ws_state=ws_state,
+        title=f"Add New Step to {st.session_state.get('add_dialog_section', 'Timeline')}", # Get section name for title
+        search_state_key="kw_search_dialog_testflow", # Use original key
+        recently_used_state_key="recently_used_keywords" # Use original key
+    )
     
-    # --- Right Column (Unchanged) ---
-    with right_col:   
-        if st.session_state.get('scroll_to_top'):
-            st.components.v1.html("""
-                <script>
-                    window.parent.scrollTo({ top: 0, behavior: 'smooth' });
-                </script>
-            """, height=0)
-            st.session_state['scroll_to_top'] = False
-        
-        selected_kw = st.session_state.get('selected_kw')
-        if selected_kw:
-            st.markdown(f"##### 2. Configure Arguments")
-            st.markdown(f"<div class='keyword-info'><div class='keyword-info-title'>{selected_kw['name']}</div>{selected_kw.get('doc', 'No doc.')}</div>", unsafe_allow_html=True)
-            
-            # =================== ✨✨✨ START: NEW LOGIC ✨✨✨ ===================
-            # Check for the special keyword FIRST
-            if selected_kw['name'].strip() == 'Verify Result of data table':
-                # If it's the special keyword, render its self-contained UI WITHOUT a form
-                render_verify_table_arguments_for_dialog(ws_state, timeline_key, section_name, selected_kw)
-
-            else:
-                # For ALL OTHER keywords, use the st.form as before
-                with st.form(key="step_form"):
-                    args_data = {}
-                    if selected_kw.get('args'):
-                        for i, arg_item in enumerate(selected_kw.get('args', [])):
-                            arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
-                            raw_arg_name = arg_info.get('name')
-                            if not raw_arg_name: continue
-                            
-                            clean_arg_name = raw_arg_name.strip('${}')
-                            arg_info['name'] = clean_arg_name
-                            unique_key = f"dialog_{selected_kw['name']}_{clean_arg_name}_{i}"
-                            args_data[clean_arg_name] = render_argument_input(arg_info, ws_state, unique_key)
-
-                    if st.form_submit_button(f"✅ Add Step to {section_name}", type="primary", use_container_width=True):
-                        new_step = {"id": str(uuid.uuid4()), "keyword": selected_kw['name'], "args": args_data}
-                        ws_state.setdefault(timeline_key, []).append(new_step)
-                        
-                        st.session_state['show_add_dialog'] = False
-                        if 'selected_kw' in st.session_state: del st.session_state['selected_kw']
-                        st.rerun()
-        else:
-            st.markdown("<div style='text-align:center; padding:3rem; color:#6b7280;'><i class='fas fa-arrow-left' style='font-size:2rem; margin-bottom:1rem; display:block;'></i><p>Select a keyword from the left.</p></div>", unsafe_allow_html=True)
-
 def generate_full_script(ws_state):
     """
     Assembles the final Robot Framework script from the workspace state,
