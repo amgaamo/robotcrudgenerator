@@ -1,0 +1,14 @@
+[server]
+runOnSave = true
+fileWatcherType = "auto"
+port = 8501
+
+[runner]
+fastReruns = true
+magicEnabled = true
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base="dark"

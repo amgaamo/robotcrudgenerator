@@ -1,0 +1,20 @@
+{
+    "test_case_name": "TC_CRUD_Generated",
+    "tags": [
+        "generated",
+        "crud"
+    ],
+    "generate_as_keyword": false,
+    "active_action": "Create",
+    "active_step": 0,
+    "steps": {
+        "suite_setup": [],
+        "test_setup": [],
+        "action_list": [],
+        "action_detail": [],
+        "verify_list": [],
+        "verify_detail": [],
+        "suite_teardown": [],
+        "test_teardown": []
+    }
+}

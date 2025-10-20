@@ -1,0 +1,234 @@
+{
+  "presets": {
+    "button_name": {
+      "type": "select_or_input",
+      "label": "🔘 Button Name",
+      "options": ["Yes", "No", "OK", "Close", "Cancel", "Confirm", "Submit", "Save", "ใช่", "ไม่ใช่", "ตกลง", "ปิด"],
+      "allow_custom": true,
+      "placeholder": "Select or type custom button name"
+    },
+    "modal_dialog_btn": {
+      "type": "select_or_input",
+      "label": "🔘 Modal Button",
+      "options": ["", "Yes", "No", "OK", "Close", "Cancel", "Confirm"],
+      "allow_custom": true,
+      "placeholder": "Leave empty to bypass modal"
+    },
+    "assertion": {
+      "type": "select_or_input",
+      "label": "✓ Assertion Type",
+      "options": ["equal", "should be", "should not be", "contains", "not contains", "==", "!="],
+      "allow_custom": true,
+      "placeholder": "Select or type custom assertion"
+    },
+    "assert": {
+      "type": "select_or_input",
+      "label": "✓ Assert",
+      "options": ["equal", "should be", "should not be", "contains", "not contains"],
+      "allow_custom": true,
+      "placeholder": "Select or type custom assertion"
+    },
+    "state": {
+      "type": "select_or_input",
+      "label": "🎭 Element State",
+      "options": ["visible", "hidden", "enabled", "disabled", "attached", "detached", "editable", "readonly"],
+      "allow_custom": true,
+      "placeholder": "Select or type custom state"
+    },
+    "field_state": {
+      "type": "select_or_input",
+      "label": "🎭 Field State",
+      "options": ["editable", "disabled", "readonly"],
+      "allow_custom": true,
+      "placeholder": "Select or type custom state"
+    },
+    "locator_progress_bar_state": {
+      "type": "select_or_input",
+      "label": "🎭 Progress Bar State",
+      "options": ["hidden", "visible"],
+      "allow_custom": true,
+      "placeholder": "Select or type custom state"
+    },
+    "state_val": {
+      "type": "select_or_input",
+      "label": "⚡ Load State",
+      "options": ["load", "domcontentloaded", "networkidle", "commit"],
+      "allow_custom": true,
+      "placeholder": "Select or type custom state"
+    },
+    "scope": {
+      "type": "select_or_input",
+      "label": "🎯 Variable Scope",
+      "options": ["TEST", "SUITE", "GLOBAL", "LOCAL"],
+      "allow_custom": true,
+      "placeholder": "TEST, SUITE, GLOBAL, or LOCAL"
+    },
+    "timeout": {
+      "type": "select_or_input",
+      "label": "⏱️ Timeout",
+      "options": ["5s", "10s", "20s", "30s", "40s", "60s", "1min", "2min"],
+      "allow_custom": true,
+      "placeholder": "e.g., 30s or 1min"
+    },
+    "delaytime": {
+      "type": "select_or_input",
+      "label": "⏱️ Delay Time",
+      "options": ["500ms", "1000ms", "1200ms", "1500ms", "2000ms"],
+      "allow_custom": true,
+      "placeholder": "e.g., 1200ms"
+    },
+    "browser": {
+      "type": "select_or_input",
+      "label": "🌐 Browser Type",
+      "options": ["chrome", "chromium", "firefox", "safari", "msedge"],
+      "allow_custom": true,
+      "placeholder": "chrome, firefox, etc."
+    },
+    "SET_BROWSER": {
+      "type": "select_or_input",
+      "label": "🌐 Browser",
+      "options": ["chrome", "chromium", "firefox", "safari", "msedge"],
+      "allow_custom": true,
+      "placeholder": "chrome, firefox, etc."
+    },
+    "action": {
+      "type": "select_or_input",
+      "label": "⚡ Action Type",
+      "options": ["OK", "Cancel", "accept", "dismiss"],
+      "allow_custom": true,
+      "placeholder": "OK, Cancel, accept, or dismiss"
+    },
+    "sel_attr": {
+      "type": "select_or_input",
+      "label": "🏷️ Select Attribute",
+      "options": ["label", "value", "text", "index"],
+      "allow_custom": true,
+      "placeholder": "Enter custom attribute name..."
+    },
+    "convertto": {
+      "type": "select_or_input",
+      "label": "🔄 Convert To",
+      "options": ["lower", "upper"],
+      "allow_custom": true,
+      "placeholder": "lower or upper"
+    },
+    "key": {
+      "type": "select_or_input",
+      "label": "⌨️ Keyboard Key",
+      "options": ["Enter", "Tab", "Escape", "Space", "ArrowUp", "ArrowDown"],
+      "allow_custom": true,
+      "placeholder": "Enter, Tab, Escape, etc."
+    },
+    "userset": {
+      "type": "select_or_input",
+      "label": "👤 User Set",
+      "options": ["masteruser", "user1", "user2", "user3", "user4", "user5"],
+      "allow_custom": true,
+      "placeholder": "masteruser, user1, etc."
+    },
+    "Search_for": {
+      "type": "select_or_input",
+      "label": "🔍 Search For",
+      "options": ["create", "delete", "update"],
+      "allow_custom": true,
+      "placeholder": "create, delete, or update"
+    },
+    "point": {
+      "type": "select_or_input",
+      "label": "🔢 Decimal Points",
+      "options": ["0", "1", "2", "3", "4"],
+      "allow_custom": true,
+      "placeholder": "Number of decimal places"
+    },
+    "is_checkboxtype": {
+      "type": "boolean",
+      "label": "☑️ Is Checkbox Type",
+      "default": "false"
+    },
+    "is_antdesign": {
+      "type": "boolean",
+      "label": "🎨 Is Ant Design",
+      "default": "false"
+    },
+    "is_switchtype": {
+      "type": "boolean",
+      "label": "🔀 Is Switch Type",
+      "default": "false"
+    },
+    "ignorcase": {
+      "type": "boolean",
+      "label": "📝 Ignore Case",
+      "default": "false"
+    },
+    "antdesign": {
+      "type": "boolean",
+      "label": "🎨 Ant Design",
+      "default": "false"
+    },
+    "is_skipfield": {
+      "type": "boolean",
+      "label": "⏭️ Skip Field",
+      "default": "false"
+    },
+    "escape_action": {
+      "type": "boolean",
+      "label": "🚫 Escape Action",
+      "default": "false"
+    },
+    "custom_locator": {
+      "type": "boolean",
+      "label": "🎯 Custom Locator",
+      "default": "false"
+    },
+    "use_comma": {
+      "type": "boolean",
+      "label": "📊 Use Comma",
+      "default": "true"
+    },
+    "is_upper": {
+      "type": "select_or_input",
+      "label": "🔤 Case Type",
+      "options": ["true", "false"],
+      "allow_custom": true,
+      "placeholder": "true or false"
+    },
+    "is_ant_design": {
+      "type": "boolean",
+      "label": "🎨 Ant Design Mode",
+      "default": "false"
+    }
+  },
+  "patterns": {
+    "password": {
+      "type": "password",
+      "label": "🔒 Password",
+      "placeholder": "Enter password or ${VAR_PASSWORD}"
+    },
+    "username": {
+      "type": "text",
+      "label": "👤 Username",
+      "placeholder": "Enter username or ${VAR_USERNAME}",
+      "suggestions": ["${VAR_USERNAME}", "${GLOBAL_USER1}", "admin"]
+    },
+    "email": {
+      "type": "text",
+      "label": "📧 Email",
+      "placeholder": "user@example.com or ${VAR_EMAIL}"
+    },
+    "url": {
+      "type": "text",
+      "label": "🔗 URL",
+      "placeholder": "https://example.com or ${URLTEST}"
+    },
+    "path": {
+      "type": "text",
+      "label": "📁 Path",
+      "placeholder": "${EXECDIR}/path/to/file"
+    },
+    "jsonpath": {
+      "type": "text",
+      "label": "🗂️ JSON Path",
+      "placeholder": "$.data.items[0].name"
+    }
+  }
+}
