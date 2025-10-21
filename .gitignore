@@ -9,6 +9,7 @@
 /ENV/
 /virtualenvs/
 /.virtualenvs/
+usermanagement-stdv-3/
 
 # ----------------------------------------------------------------
 # 2. Python Cache & Compiled Files
