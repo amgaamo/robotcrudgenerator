@@ -1553,5 +1553,15 @@ def get_css():
             height: auto !important;
         }
         
+        /* ===== STEP CARD CAPTION FIX ===== */
+        /* ✅ เพิ่มส่วนนี้เข้ามาเพื่อแก้ไขสีของ arguments */
+        .step-card .stCaption,
+        .step-card .stCaption *,
+        div[data-testid="stVerticalBlock"] .step-card .stCaption,
+        div[data-testid="stVerticalBlock"] .step-card .stCaption * {
+            color: #58a6ff !important;
+            font-size: 0.8rem !important;
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace !important;
+        }
     </style>
     """

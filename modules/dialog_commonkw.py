@@ -585,37 +585,37 @@ def render_add_step_dialog_base(
                             else:
                                 st.caption("_No text args_")
                         
-                        # ✅ Preview และปุ่ม Insert (ไม่อยู่ใน form)
-                        preview_syntax = ""
-                        if quick_ds and target_arg and quick_row_val:
+                        # ✅ แสดงปุ่ม Insert เสมอ (ไม่มี preview)
+                        if quick_ds and target_arg:
                             ds_info = csv_keywords.get(quick_ds, {})
                             ds_var = ds_info.get('ds_var', 'DATA')
                             col_var = ds_info.get('col_var', 'COL')
                             
-                            if len(headers) > 1 and quick_col:
-                                preview_syntax = f"${{{ds_var}['{quick_row_val}'][${{{col_var}.{quick_col}}}]}}"
-                            else:
-                                preview_syntax = f"${{{ds_var}['{quick_row_val}']}}"
+                            # สร้าง syntax สำหรับ insert
+                            insert_syntax = ""
+                            if quick_row_val:
+                                if len(headers) > 1 and quick_col:
+                                    insert_syntax = f"${{{ds_var}['{quick_row_val}'][${{{col_var}.{quick_col}}}]}}"
+                                else:
+                                    insert_syntax = f"${{{ds_var}['{quick_row_val}']}}"
                             
-                            st.code(preview_syntax, language="robotframework")
-                            
-                            # ✅ ปุ่ม Insert ธรรมดา (ไม่ใช่ form_submit_button)
+                            # ✅ ปุ่ม Insert (แสดงเสมอ)
                             if st.button("✅ Insert", type="primary", use_container_width=True, 
                                         key=f"quick_csv_insert_btn_{dialog_state_key}"):
                                 if not target_arg:
                                     st.warning("Please select a target argument 'Insert to →'")
                                 elif not quick_row_val:
                                     st.warning("Please enter a 'Row Key'")
-                                elif preview_syntax:
+                                elif insert_syntax:
                                     # ✅ Insert ค่าลง session_state
                                     kw_name_clean = selected_kw['name'].replace(' ', '_').replace('/', '_').replace('(', '').replace(')', '')
                                     for i, arg_item in enumerate(selected_kw.get('args', [])):
                                         arg_name = arg_item.get('name', '').strip('${}')
                                         if arg_name == target_arg:
                                             unique_key = f"{dialog_state_key}_{kw_name_clean}_{arg_name}_{i}"
-                                            st.session_state[unique_key] = preview_syntax
-                                            st.toast(f"✅ Inserted '{preview_syntax}' into '{target_arg}'", icon="✅")
-                                            st.rerun()  # ← Rerun เพื่อให้ widget แสดงค่าใหม่
+                                            st.session_state[unique_key] = insert_syntax
+                                            st.toast(f"✅ Inserted '{insert_syntax}' into '{target_arg}'", icon="✅")
+                                            st.rerun()
                                             break
                     else:
                         st.info("No CSV data sources found or this keyword has no arguments.")
