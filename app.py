@@ -850,8 +850,11 @@ def data_source_export_dialog(source, index):
                 )
                 
                 if success:
-                    st.success(f"Successfully appended code to datasources.resource!")
-                    st.balloons()
+                    # --- แก้ไขตรงนี้ ---
+                    relative_path = os.path.relpath(full_path, st.session_state.project_path)
+                    # เปลี่ยนจาก st.success หรือ st.toast เป็นการตั้งค่า state
+                    st.session_state.file_created_message = f"✅ Successfully created file: `{relative_path}`"
+                    # --- สิ้นสุดการแก้ไข ---
                 else:
                     st.error(message)
                 # --- END: ส่วนที่แก้ไข ---
@@ -2353,7 +2356,7 @@ def render_resources_view_new():
                 st.caption("File will be saved in the `pageobjects` folder.")
                 new_file_name = st.text_input(
                     "New file name:",
-                    value="new_locators.resource",
+                    value="new_locators.robot",
                     key="locator_new_filename"
                 )
                 
@@ -2382,13 +2385,22 @@ Resource            ../resources/commonkeywords.resource
                         
                         success = create_new_robot_file(full_path, full_content)
                         if success:
-                            st.success(f"Successfully created file at `{os.path.relpath(full_path, st.session_state.project_path)}`")
-                            # สั่งสแกนโปรเจกต์ใหม่เพื่อแสดงไฟล์ล่าสุด
+                            # เก็บข้อความและ path ไว้ใน session_state
+                            st.session_state['show_file_created_success'] = {
+                                'path': os.path.relpath(full_path, st.session_state.project_path)
+                            }
+                            # สแกนโปรเจกต์ใหม่
                             st.session_state.project_structure = scan_robot_project(st.session_state.project_path)
                             st.rerun()
                         else:
                             st.error("Failed to create the file.")
-            # --- END: ส่วนที่แก้ไขใหม่ทั้งหมด ---
+           
+    # แสดงข้อความ success หลัง rerun (วางไว้นอก if button)
+        if 'show_file_created_success' in st.session_state and st.session_state.show_file_created_success:
+            success_data = st.session_state.show_file_created_success
+            st.success(f"✅ Successfully created file at `{success_data['path']}`")
+            # เคลียร์ข้อความหลังแสดงแล้ว
+            del st.session_state['show_file_created_success']        
 
 # ============================================================================
 # MAIN APPLICATION
@@ -2405,7 +2417,6 @@ def main():
 
     # --- ลบ st.tabs ออก และเรียกใช้ render_studio_tab() โดยตรง ---
     render_studio_tab()
-
 
 if __name__ == "__main__":
     main()
