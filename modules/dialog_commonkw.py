@@ -691,9 +691,8 @@ def render_add_step_dialog_base(
                                 # Re-run the logic from ui_common.render_argument_input
                                 is_locator_arg = any(s in clean_arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'menu', 'header', 'body', 'theader', 'tbody'])
                                 
-                                if is_locator_arg:
-                                    final_value = st.session_state.get(f"{unique_key}_locator_select")
-                                elif clean_arg_name in ARGUMENT_PRESETS:
+                                # 1. 🐞 FIX: ตรวจสอบ PRESETS ก่อน
+                                if clean_arg_name in ARGUMENT_PRESETS:
                                     config = ARGUMENT_PRESETS[clean_arg_name]
                                     input_type = config.get('type')
                                     if input_type == "select_or_input":
@@ -705,8 +704,13 @@ def render_add_step_dialog_base(
                                     else:
                                         # 'boolean' or 'select'
                                         final_value = st.session_state.get(unique_key)
+                                
+                                # 2. 🐞 FIX: ค่อยตรวจสอบ LOCATOR ทีหลัง
+                                elif is_locator_arg:
+                                    final_value = st.session_state.get(f"{unique_key}_locator_select")
+
+                                # 3. ตรวจสอบ PATTERNS
                                 else:
-                                    # Check patterns
                                     matched_pattern = False
                                     arg_lower = clean_arg_name.lower()
                                     for pattern_key in ARGUMENT_PATTERNS.keys():
@@ -715,7 +719,7 @@ def render_add_step_dialog_base(
                                             matched_pattern = True
                                             break
                                     
-                                    # Default Text Input
+                                    # 4. Default Text Input
                                     if not matched_pattern:
                                         final_value = st.session_state.get(f"{unique_key}_default_text")
                                 
