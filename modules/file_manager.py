@@ -84,18 +84,27 @@ def read_robot_variables_from_content(content: str):
     (Refactored to call utils.py and handle Streamlit warnings here)
     """
     try:
-        # 2. แก้ไข: เรียกใช้ฟังก์ชันจาก utils
-        locators = parse_robot_variables(content)
+        # --- START: โค้ดที่แก้ไข ---
+
+        # 1. แก้ไข: เรียกใช้ฟังก์ชันจาก utils
+        #    (เปลี่ยนชื่อตัวแปรจาก 'locators' เป็น 'variables' เพื่อความชัดเจน)
+        variables = parse_robot_variables(content)
         
-        # 3. ย้าย: Logic การแสดง warning มาไว้ที่นี่
+        # 2. ย้าย: Logic การแสดง warning มาไว้ที่นี่ (คงเดิม)
         variables_match = re.search(r'\*\*\* Variables \*\*\*(.*?)(?=\*\*\*|$)', content, re.DOTALL | re.IGNORECASE)
         if not variables_match:
             st.warning("Could not find a '*** Variables ***' section in the content.")
         
-        if variables_match and not locators:
-            st.warning("No variables starting with `LOCATOR_` found.")
+        # 3. [FIX] แก้ไข Warning ที่ผิดพลาด
+        #    เปลี่ยนจาก "No variables starting with `LOCATOR_` found."
+        #    เป็น "No variables were found in the '*** Variables ***' section."
+        if variables_match and not variables:
+            st.warning("No variables were found in the '*** Variables ***' section.")
             
-        return locators
+        return variables # 4. คืนค่า 'variables' ที่ถูกต้อง (ไม่ใช่ 'locators')
+    
+        # --- END: โค้ดที่แก้ไข ---
+
     except Exception as e:
         st.error(f"An error occurred while parsing content: {str(e)}")
         return []
@@ -409,3 +418,111 @@ def append_to_api_base(file_path, variable_line, keyword_line):
         return False, f"Error: {os.path.basename(file_path)} not found."
     except Exception as e:
         return False, f"An error occurred: {e}"
+
+def update_menu_locators_in_file(file_path, menu_locators):
+    """
+    อัปเดต menu locators ในไฟล์ commonkeywords
+    
+    Args:
+        file_path: path ไปยังไฟล์ที่ต้องการอัปเดต
+        menu_locators: dict ของ menu locators {
+            'homemenu': {'name': 'homemenu', 'value': '...', 'type': 'scalar'},
+            'mainmenu': {'name': 'mainmenu', 'value': {...}, 'type': 'dict'},
+            ...
+        }
+    """
+    try:
+        # อ่านไฟล์ปัจจุบัน
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        # หา section markers
+        menu_section_start = None
+        menu_section_end = None
+        
+        for i, line in enumerate(lines):
+            if '### All Menu Locator ###' in line:
+                menu_section_start = i
+            elif '### All Menu Locator (END) ###' in line:
+                menu_section_end = i
+                break
+        
+        # สร้าง content ใหม่สำหรับ menu section
+        new_menu_lines = ['### All Menu Locator ###\n']
+        
+        # เรียงลำดับ: homemenu, mainmenu, submenu, menuname
+        menu_order = ['homemenu', 'mainmenu', 'submenu', 'menuname']
+        
+        for menu_name in menu_order:
+            if menu_name in menu_locators:
+                menu_data = menu_locators[menu_name]
+                
+                if menu_data['type'] == 'scalar':
+                    # ${homemenu}    value
+                    new_menu_lines.append(f"${{{menu_name}}}    {menu_data['value']}\n")
+                
+                elif menu_data['type'] == 'dict':
+                    # &{mainmenu}    key1=value1
+                    # ...            key2=value2
+                    new_menu_lines.append(f"&{{{menu_name}}}")
+                    
+                    items = menu_data.get('value', {})
+                    if isinstance(items, dict):
+                        first = True
+                        for key, value in items.items():
+                            if first:
+                                new_menu_lines[-1] += f"    {key}={value}\n"
+                                first = False
+                            else:
+                                new_menu_lines.append(f"...{' ' * (len(menu_name) + 5)}{key}={value}\n")
+                
+                new_menu_lines.append('\n')  # เว้นบรรทัดระหว่างเมนู
+        
+        new_menu_lines.append('### All Menu Locator (END) ###\n')
+        
+        # แทนที่ section เดิม
+        if menu_section_start is not None and menu_section_end is not None:
+            new_lines = lines[:menu_section_start] + new_menu_lines + lines[menu_section_end + 1:]
+        else:
+            # ถ้าไม่มี section ให้เพิ่มที่ท้ายไฟล์
+            new_lines = lines + ['\n'] + new_menu_lines
+        
+        # เขียนกลับไปยังไฟล์
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"Error updating menu locators: {e}")
+        return False
+
+
+def read_menu_locators_from_file(file_path):
+    """
+    อ่าน menu locators จากไฟล์ commonkeywords
+    
+    Returns:
+        dict: menu locators ในรูปแบบ {
+            'homemenu': {'name': 'homemenu', 'value': '...', 'type': 'scalar'},
+            ...
+        }
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        all_variables = read_robot_variables_from_content(content)
+        
+        MENU_LOCATOR_NAMES = ['homemenu', 'mainmenu', 'submenu', 'menuname']
+        menu_locators = {}
+        
+        for v in all_variables:
+            if v.get('name') in MENU_LOCATOR_NAMES:
+                menu_locators[v.get('name')] = v
+        
+        return menu_locators
+        
+    except Exception as e:
+        st.error(f"Error reading menu locators: {e}")
+        return {}

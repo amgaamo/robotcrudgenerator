@@ -108,8 +108,9 @@ def parse_robot_keywords(file_content: str):
 
 def parse_robot_variables(content: str):
     """
-    Reads variables from a string content.
-    (Moved from file_manager.py and refactored to remove streamlit calls)
+    [FIXED] Reads ALL variables from a string content,
+    including scalar (${}), list (@{}), and dictionary (&{...}) types,
+    and handles multi-line definitions.
     """
     try:
         variables_match = re.search(r'\*\*\* Variables \*\*\*(.*?)(?=\*\*\*|$)', content, re.DOTALL | re.IGNORECASE)
@@ -118,20 +119,127 @@ def parse_robot_variables(content: str):
             return []
 
         variables_content = variables_match.group(1)
-        locators = []
-        variable_pattern = re.compile(r'^\s*\$\{([^}]+)\}\s+(.+?)\s*$', re.MULTILINE)
-
-        for match in variable_pattern.finditer(variables_content):
-            variable_name = match.group(1).strip()
-            if variable_name.upper().startswith('LOCATOR_'):
-                locators.append({
-                    'name': variable_name,
-                    'value': match.group(2).strip()
-                })
+        all_variables = []
         
-        if not locators:
-            print("Warning: No variables starting with `LOCATOR_` found.")
-        return locators
+        # Pattern to find the start of a variable
+        # $&@{name}    value...
+        var_start_pattern = re.compile(r'^\s*([$@&]\{[^{}]+\})\s*(.*)$')
+        # ...    value...
+        continuation_pattern = re.compile(r'^\s*\.\.\.\s*(.*)$')
+
+        lines = variables_content.strip().split('\n')
+        
+        current_var_data = None
+
+        for line in lines:
+            line_strip = line.strip()
+            if not line_strip or line_strip.startswith('#'):
+                # Skip empty lines and comments
+                continue
+            
+            var_match = var_start_pattern.match(line)
+            cont_match = continuation_pattern.match(line)
+
+            if var_match:
+                # This is a new variable definition.
+                # First, save the previous variable if one was being built.
+                if current_var_data:
+                    all_variables.append(current_var_data)
+                
+                full_name = var_match.group(1).strip() # e.g., ${homemenu}
+                first_value_line = var_match.group(2).strip()
+                
+                var_type_char = full_name[0]
+                var_name = full_name[2:-1] # e.g., homemenu
+                
+                var_type = 'scalar'
+                if var_type_char == '@':
+                    var_type = 'list'
+                elif var_type_char == '&':
+                    var_type = 'dict'
+                    
+                current_var_data = {
+                    'name': var_name,
+                    'type': var_type,
+                    'value_lines': [first_value_line] # Store raw value lines
+                }
+
+            elif cont_match and current_var_data:
+                # This is a continuation of the previous variable.
+                continuation_value_line = cont_match.group(1).strip()
+                # ตรวจสอบว่ามีค่าหรือไม่ (ป้องกันบรรทัด ... ว่างๆ)
+                if continuation_value_line:
+                    current_var_data['value_lines'].append(continuation_value_line)
+            
+            else:
+                # This line is not a var start or continuation (e.g., junk line),
+                # so save the current var and reset.
+                if current_var_data:
+                    all_variables.append(current_var_data)
+                current_var_data = None
+        
+        # Save the very last variable being processed
+        if current_var_data:
+            all_variables.append(current_var_data)
+
+        # --- Post-process the 'value_lines' into structured 'value' ---
+        final_parsed_variables = []
+        for var_data in all_variables:
+            try:
+                if var_data['type'] == 'scalar':
+                    # Join all lines, though scalars are usually single-line
+                    var_data['value'] = " ".join(var_data['value_lines'])
+                
+                elif var_data['type'] == 'list':
+                    # Each line is an item
+                    var_data['value'] = [line for line in var_data['value_lines'] if line]
+                
+                elif var_data['type'] == 'dict':
+                    # Parse key=value pairs
+                    dict_value = {}
+                    combined_lines = " ".join(var_data['value_lines'])
+                    
+                    # ใช้ regex findall เพื่อจับ key=value ที่อาจมี space
+                    # (?:^|\s+) = non-capturing group:
+                    #   - ^ = or start of string
+                    #   - \s+ = or one or more spaces
+                    # ([^=\s]+) = Group 1: key (anything not = or space)
+                    # =
+                    # (.*?(?=\s+[^=\s]+=|\s*$)) = Group 2: value
+                    #   - .*? = non-greedy match of the value
+                    #   - (?=...) = positive lookahead (ends before...)
+                    #   - \s+[^=\s]+= = ...next key= (e.g. " key2=")
+                    #   - | = or
+                    #   - \s*$ = ...end of the string
+                    
+                    # Regex ที่ง่ายกว่าและรองรับค่าที่มี space
+                    # (แยกตาม '  ' (2+ spaces) หรือ '='
+                    # แต่วิธีที่ปลอดภัยที่สุดคือการ parse ทีละบรรทัด
+                    
+                    for line in var_data['value_lines']:
+                        # แยก key=value ที่อาจอยู่บรรทัดเดียวกัน
+                        # ใช้ regex split ตาม space ที่มากกว่า 2 (เว้นแต่จะอยู่ใน quote)
+                        # เพื่อความเรียบง่าย: สมมติว่า 1 key-value ต่อ 1 line (สำหรับ dict)
+                        
+                        if '=' in line:
+                            # Split on the *first* equals sign
+                            key, val = line.split('=', 1)
+                            dict_value[key.strip()] = val.strip()
+                        elif line:
+                            # Handle flag-style entries (e.g., "readonly")
+                            dict_value[line] = None 
+                    var_data['value'] = dict_value
+                
+                del var_data['value_lines'] # Clean up temporary field
+                final_parsed_variables.append(var_data)
+            except Exception as e_inner:
+                print(f"Error parsing variable '{var_data.get('name')}': {e_inner}")
+
+        if not final_parsed_variables:
+            print("Warning: No variables were found in the '*** Variables ***' section.")
+        
+        return final_parsed_variables
+
     except Exception as e:
         print(f"An error occurred while parsing content: {str(e)}")
         return []

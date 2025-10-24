@@ -40,6 +40,7 @@ from modules.keyword_categorizer import (
 )
 from modules.crud_generator.ui_crud import render_crud_generator_tab
 from modules.ui_keyword_factory import render_keyword_factory_tab
+from modules.menu_locator_manager import render_menu_locator_manager
 
 # HTML Parser
 try:
@@ -1905,6 +1906,9 @@ def render_resources_view_new():
             
 
             if uploaded_keyword_file:
+                
+                MENU_LOCATOR_NAMES = ['homemenu', 'mainmenu', 'submenu', 'menuname']
+
                 if uploaded_keyword_file.name != ws_state.get('common_keyword_path'):
                     with st.spinner(f"Parsing {uploaded_keyword_file.name}..."):
                         try:
@@ -1914,11 +1918,23 @@ def render_resources_view_new():
                             
                             all_variables = read_robot_variables_from_content(content)
                             
-                            ws_state['common_variables'] = [
-                                v for v in all_variables 
-                                if v.get('name') not in MENU_LOCATOR_NAMES
-                            ]
+                            # --- START: โค้ดที่แก้ไข ---
                             
+                            new_menu_locators = {}
+                            new_common_vars = []
+                            
+                            for v in all_variables:
+                                var_name = v.get('name')
+                                if var_name in MENU_LOCATOR_NAMES:
+                                    new_menu_locators[var_name] = v
+                                else:
+                                    new_common_vars.append(v)
+                            
+                            # อัปเดตทั้งสองส่วน
+                            ws_state['common_variables'] = new_common_vars
+                            ws_state['menu_locators'] = new_menu_locators 
+                            
+                            # --- END: โค้ดที่แก้ไข ---
                             
                             ws_state['common_keyword_path'] = uploaded_keyword_file.name                                
                             st.success(f"Successfully replaced keywords and variables with '{uploaded_keyword_file.name}'!")
@@ -2028,27 +2044,11 @@ def render_resources_view_new():
     with panel_grid[1]:
         st.markdown("#### <i class='fa-solid fa-bullseye'></i> Locators", unsafe_allow_html=True)
         with st.container(border=True):
+            with st.expander("🍔 Menu Locator Management", expanded=False):
+                render_menu_locator_manager()
+            
             with st.expander("📁 Load from .robot file(s)", expanded=True):
                 
-                ws_state.setdefault('upload_warnings', [])
-                warnings_to_remove = []
-
-                if ws_state['upload_warnings']:
-                    st.markdown("---")
-                    
-                for i, filename in enumerate(ws_state['upload_warnings']):
-                    col1, col2 = st.columns([0.9, 0.1])
-                    with col1: st.warning(f"File '{filename}' is already loaded. Skipping.", icon="⚠️")
-                    with col2:
-                        if st.button("✕", key=f"dismiss_warn_{filename.replace('.', '_')}_{i}", help="Dismiss this warning"):
-                            warnings_to_remove.append(filename)
-                
-                if warnings_to_remove:
-                    for filename in warnings_to_remove:
-                        if filename in ws_state['upload_warnings']:
-                            ws_state['upload_warnings'].remove(filename)
-                    st.rerun()
-
                 uploaded_locator_files = st.file_uploader(
                     "Browse for locator files (multi-upload)", 
                     type=['robot', 'resource'], 
@@ -2059,13 +2059,10 @@ def render_resources_view_new():
                 if uploaded_locator_files:
                     total_loaded = 0
                     new_files_processed = False
-                    new_warnings_added = False
 
                     for uploaded_file in uploaded_locator_files:
                         if any(loc.get('page_name') == uploaded_file.name for loc in ws_state['locators']):
-                            if uploaded_file.name not in ws_state['upload_warnings']:
-                                ws_state['upload_warnings'].append(uploaded_file.name)
-                                new_warnings_added = True
+                            st.toast(f"File '{uploaded_file.name}' is already loaded. Skipping.", icon="⚠️")
                             continue
                         
                         new_files_processed = True
@@ -2080,7 +2077,7 @@ def render_resources_view_new():
                             total_loaded += len(locators)
 
                     if new_files_processed: st.success(f"Loaded {total_loaded} new locators.")
-                    if new_files_processed or new_warnings_added: st.rerun()
+                    if new_files_processed: st.rerun()
             
             with st.expander("📄 Add from HTML", expanded=True):
                 for i, page in enumerate(ws_state['html_pages']):

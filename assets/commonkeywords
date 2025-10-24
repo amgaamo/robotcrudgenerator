@@ -50,14 +50,15 @@ ${CONF_TEMPEMAIL_PASSEMAIL}     evnfpzerwhejxefd
 
 
 ### All Menu Locator ###
-${homemenu}       //*[contains(@href, '/mainmenu/home') and contains(@class,'brand')]
+${homemenu}    //*[contains(@href, '/mainmenu/home') and contains(@class,'brand')]
 
-&{mainmenu}       configuration=//*[@title="Configuration"]
-&{submenu}        usermgt=//a[contains(@title, 'User Management')]
-...               companyMgt=//a[contains(@title, 'Company Management')]
+&{mainmenu}    configuration=//*[@title="Configuration"]
 
-&{menuname}       usermgt=User Management
-...               companyMgt=Company Management
+&{submenu}    usermgt=//a[contains(@title, 'User Management')]
+...            companyMgt=//a[contains(@title, 'Company Management')]
+
+&{menuname}    usermgt=User Management
+...             companyMgt=Company Management
 
 ### All Menu Locator (END) ###
 

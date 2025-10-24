@@ -28,20 +28,25 @@ def _load_default_keywords():
         keywords = parse_robot_keywords(content)
         all_variables = read_robot_variables_from_content(content)
         
-        # Filter out menu locators from common variables
-        common_variables = [
-            v for v in all_variables 
-            if v.get('name') not in MENU_LOCATOR_NAMES
-        ]
+        # แยก menu locators และ common variables
+        menu_locators = {}
+        common_variables = []
+        
+        for v in all_variables:
+            var_name = v.get('name')
+            if var_name in MENU_LOCATOR_NAMES:
+                menu_locators[var_name] = v
+            else:
+                common_variables.append(v)
                 
-        return keywords, common_variables, "Default Keywords"
+        return keywords, common_variables, menu_locators, "Default Keywords"
 
     except FileNotFoundError:
         st.warning("Default keywords file not found. Please upload one manually.")
-        return [], [], "", None
+        return [], [], {}, None
     except Exception as e:
         st.error(f"Error loading default keywords: {e}")
-        return [], [], "", None
+        return [], [], {}, None
 
 def init_session_state():
     """Initialize all session state variables"""
@@ -112,6 +117,7 @@ def init_session_state():
             'view': 'Resources',  # หน้าจอเริ่มต้นที่จะแสดง 'Resources' หรือ 'Timeline'
             'keywords': [],      # สำหรับเก็บ Keywords ที่ import เข้ามา
             'common_variables': [],
+            'menu_locators': {},  # เพิ่มบรรทัดนี้
             'common_keyword_path': None,
             'locators': [],      # สำหรับเก็บ Locators ทั้งหมด
             'html_pages': [{'name': 'Page 1', 'html': ''}],
@@ -143,9 +149,10 @@ def init_session_state():
 
         # 🎯 3. เรียกใช้ฟังก์ชันโหลดไฟล์ดีฟอลต์
         # ทำให้เมื่อเปิดแอปครั้งแรก จะมี keywords พร้อมใช้งานทันที
-        keywords, common_vars, path_name = _load_default_keywords()
+        keywords, common_vars, menu_locators, path_name = _load_default_keywords()
         st.session_state.studio_workspace['keywords'] = keywords
         st.session_state.studio_workspace['common_variables'] = common_vars
+        st.session_state.studio_workspace['menu_locators'] = menu_locators
         st.session_state.studio_workspace['common_keyword_path'] = path_name
 
         # ===== START: ADDED FOR KEYWORD FACTORY =====
