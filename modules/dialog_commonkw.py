@@ -391,8 +391,27 @@ def render_add_step_dialog_base(
     all_keywords_list = ws_state.get('keywords', [])
     if all_keywords_list and 'categorized_keywords' not in ws_state:
         ws_state['categorized_keywords'] = categorize_keywords(all_keywords_list)
-    categorized_keywords = ws_state.get('categorized_keywords', {})
-    keyword_map = {kw['name']: kw for kw in all_keywords_list}
+   
+    # --- START: Manually inject Control Flow Keywords ---
+    # (This ensures they *always* exist for any dialog that uses this base)
+    categorized_keywords = ws_state.get('categorized_keywords', {}) # <-- นี่คือบรรทัดที่ 1 ที่มาแทนที่
+    
+    control_flow_kws = [
+        {'name': 'IF Condition', 'args': [{'name': '${condition}', 'default': ''}], 'doc': 'Starts a conditional block.'},
+        {'name': 'ELSE IF Condition', 'args': [{'name': '${condition}', 'default': ''}], 'doc': 'Starts an else-if block.'},
+        {'name': 'ELSE', 'args': [], 'doc': 'Starts an else block.'},
+        {'name': 'END', 'args': [], 'doc': 'Ends a conditional block.'}
+    ]
+    
+    # Add them to the dictionary under a new category
+    categorized_keywords['Control Flow'] = control_flow_kws
+    
+    # We also need to update the keyword_map so they can be "selected"
+    keyword_map = {kw['name']: kw for kw in all_keywords_list} # <-- นี่คือบรรทัดที่ 2 ที่มาแทนที่
+    for kw in control_flow_kws:
+        if kw['name'] not in keyword_map:
+            keyword_map[kw['name']] = kw
+    # --- END: Manually inject Control Flow Keywords ---
     
     if selected_kw_state_key not in st.session_state: 
         st.session_state[selected_kw_state_key] = None

@@ -12,15 +12,23 @@ import pandas as pd
 import uuid
 import json 
 import textwrap
+import re
 
 # Backend imports
-from modules.session_manager import init_session_state, get_clean_locator_name 
+from modules.session_manager import init_session_state 
 from modules.file_manager import (
     scan_robot_project, create_new_robot_file, 
-    parse_robot_keywords, read_robot_variables_from_content,
     append_robot_content_intelligently, append_to_api_base,
-    parse_data_sources_from_resource
+    read_robot_variables_from_content
 )
+
+from modules.utils import (
+    get_clean_locator_name, 
+    get_file_icon,
+    parse_robot_keywords,
+    parse_data_sources
+)
+
 from modules.styles import get_css
 from urllib.parse import urlparse
 from modules.ui_test_flow import render_test_flow_tab
@@ -31,6 +39,7 @@ from modules.keyword_categorizer import (
     get_category_priority
 )
 from modules.crud_generator.ui_crud import render_crud_generator_tab
+from modules.ui_keyword_factory import render_keyword_factory_tab
 
 # HTML Parser
 try:
@@ -61,19 +70,6 @@ st.markdown(get_css(), unsafe_allow_html=True)
 # ============================================================================
 # UI COMPONENTS - HELPER FUNCTION FOR COPY BUTTON (เพิ่มใหม่)
 # ============================================================================
-
-def get_file_icon(file_name):
-    """Return an emoji icon based on file extension."""
-    if file_name.endswith('.robot'):
-        return "📝"  # Robot icon
-    elif file_name.endswith('.resource'):
-        return "📝"  # Gear/Resource icon
-    elif file_name.endswith('.py'):
-        return "🐍"  # Python icon
-    elif file_name.endswith('.txt'):
-        return "📝"  # Text file icon
-    else:
-        return "📄"  # Generic file icon
 
 def copy_button_component(text_to_copy, button_key):
     """
@@ -182,14 +178,14 @@ def render_sidebar():
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("📂 Set", use_container_width=True, key="sidebar_set"):
+            if st.button("📂 Set", width='stretch', key="sidebar_set"):
                 if project_path:
                     st.session_state.project_path = project_path
                     st.session_state.project_structure = scan_robot_project(project_path)
                     st.rerun()
 
         with col2:
-            if st.button("🔄 Clear", use_container_width=True, key="sidebar_clear"):
+            if st.button("🔄 Clear", width='stretch', key="sidebar_clear"):
                 st.session_state.project_path = ""
                 st.session_state.project_structure = {}
                 st.rerun()
@@ -286,7 +282,7 @@ def render_folder_tree(structure):
             if st.button(
                 f"{toggle_icon}  {folder_icon} {display_folder_name}/  `{len(folder_files)}`",
                 key=f"folder_btn_{folder_name}",
-                use_container_width=True,
+                width='stretch',
                 help="Click to expand/collapse"
             ):
                 st.session_state.expanded_folders[folder_name] = not is_expanded
@@ -436,7 +432,7 @@ def render_timeline_view():
     st.markdown("##### --- SUITE SETUP ---")
     
     # Placeholder สำหรับปุ่ม Add Step (จะทำงานใน Step ถัดไป)
-    if st.button("⊕ Add Step to Setup", use_container_width=True, key="add_step_setup"):
+    if st.button("⊕ Add Step to Setup", width='stretch', key="add_step_setup"):
         st.info("Command Palette for adding steps will be implemented next.")
 
     st.markdown("---")
@@ -475,12 +471,12 @@ def render_timeline_view():
                     st.rerun()
 
         # Placeholder สำหรับปุ่ม Add Step ระหว่างทาง
-        if st.button(f"⊕ Add Step Here", use_container_width=True, key=f"add_step_after_{i}"):
+        if st.button(f"⊕ Add Step Here", width='stretch', key=f"add_step_after_{i}"):
             st.info("Command Palette for adding steps will be implemented next.")
 
     st.markdown("---")
     st.markdown("##### --- SUITE TEARDOWN ---")
-    if st.button("⊕ Add Step to Teardown", use_container_width=True, key="add_step_teardown"):
+    if st.button("⊕ Add Step to Teardown", width='stretch', key="add_step_teardown"):
         st.info("Command Palette for adding steps will be implemented next.")
 
 def csv_creator_dialog():
@@ -578,7 +574,7 @@ def csv_creator_dialog():
                     col_add, col_clear = st.columns([1, 1])
                     
                     with col_add:
-                        if st.button("✅ Add Row", type="primary", use_container_width=True, key="add_row_btn"):
+                        if st.button("✅ Add Row", type="primary", width='stretch', key="add_row_btn"):
                             # ตรวจสอบว่ามีข้อมูลอย่างน้อย 1 field
                             if any(value.strip() for value in new_row_data.values()):
                                 if 'csv_rows_data' not in ws_state:
@@ -591,7 +587,7 @@ def csv_creator_dialog():
                                 st.warning("⚠️ Please fill in at least one field.")
                     
                     with col_clear:
-                        if st.button("🔄 Clear Form", use_container_width=True, key="clear_form_btn"):
+                        if st.button("🔄 Clear Form", width='stretch', key="clear_form_btn"):
                             st.rerun()
 
                 # 📊 แสดงตารางข้อมูลที่มีอยู่
@@ -608,7 +604,7 @@ def csv_creator_dialog():
                     edited_df = st.data_editor(
                         df,
                         num_rows="dynamic",  # ให้เพิ่มและลบแถวได้
-                        use_container_width=True,
+                        width='stretch',
                         hide_index=False,
                         key="simple_data_editor"
                     )
@@ -634,7 +630,7 @@ def csv_creator_dialog():
                 if st.button(
                     "💾 Save to datatest folder", 
                     type="primary", 
-                    use_container_width=True, 
+                    width='stretch', 
                     key="save_new_csv",
                     disabled=save_disabled
                 ):
@@ -665,7 +661,7 @@ def csv_creator_dialog():
             with save_col2:
                 if st.button(
                     "❌ Cancel", 
-                    use_container_width=True, 
+                    width='stretch', 
                     key="cancel_new_csv"
                 ):
                     # รีเซ็ตค่า
@@ -720,7 +716,7 @@ def csv_creator_dialog():
                     edited_df = st.data_editor(
                         ws_state['csv_uploaded_data'], 
                         num_rows="dynamic", 
-                        use_container_width=True, 
+                        width='stretch', 
                         key="csv_data_editor_upload"
                     )
                     ws_state['csv_uploaded_data'] = edited_df
@@ -730,7 +726,7 @@ def csv_creator_dialog():
             st.markdown("---")
             
             # ปุ่ม Save สำหรับ Upload mode
-            if st.button("💾 Save to datatest folder", type="primary", use_container_width=True, key="save_uploaded_csv"):
+            if st.button("💾 Save to datatest folder", type="primary", width='stretch', key="save_uploaded_csv"):
                 if not ws_state.get('csv_save_as_name'):
                     st.error("⚠️ Please provide a 'Save As' name.")
                 elif ws_state.get('csv_uploaded_data') is None:
@@ -869,7 +865,7 @@ def render_test_data_tab():
     with st.expander("📊 CSV Data Sources", expanded=True):
         
         # --- Small create button at the top ---
-        if st.button("➕ Create New CSV File", use_container_width=False, type="secondary"):
+        if st.button("➕ Create New CSV File", width='content', type="secondary"):
             ws_state['show_csv_creator'] = True
             st.rerun()
         
@@ -897,7 +893,7 @@ def render_test_data_tab():
                     with st.spinner(f"Parsing {uploaded_ds_file.name}..."):
                         try:
                             content = uploaded_ds_file.getvalue().decode("utf-8")
-                            imported_sources = parse_data_sources_from_resource(content)
+                            imported_sources = parse_data_sources(content)
 
                             if not imported_sources:
                                 st.warning("No valid 'Import DataSource' keywords found.")
@@ -918,6 +914,7 @@ def render_test_data_tab():
                             st.error(f"Failed to parse file: {e}")
         
         # --- RIGHT PANEL: Data Source Links ---
+        
         with right_panel:
             st.markdown("##### 🔗 Data Source Links")
             
@@ -1052,7 +1049,7 @@ def render_test_data_tab():
                             )
                             
                             if is_complete:
-                                if st.button("💾 Export", key=f"export_{i}", use_container_width=True):
+                                if st.button("💾 Export", key=f"export_{i}", width='stretch'):
                                     data_source_export_dialog(source, i)
                             else:
                                 st.markdown(
@@ -1075,14 +1072,14 @@ def render_test_data_tab():
 
                     # Column 5: Delete
                     with row_cols[4]:
-                        if st.button("🗑️", key=f"del_{i}", help="Delete this data source link", use_container_width=True, type="secondary"):
+                        if st.button("🗑️", key=f"del_{i}", help="Delete this data source link", width='stretch', type="secondary"):
                             ws_state['data_sources'].pop(i)
                             st.rerun()
                     
                     st.markdown('</div>', unsafe_allow_html=True)
 
             st.markdown("---")
-            if st.button("🔗 Add Data Source Link (Manual)", use_container_width=True, type="secondary"):
+            if st.button("🔗 Add Data Source Link (Manual)", width='stretch', type="secondary"):
                 ws_state.setdefault('data_sources', []).append({
                     'name': '', 'file_name': '', 'col_name': '', 'is_imported': False
                 })
@@ -1106,7 +1103,7 @@ def render_api_generator_tab():
     # --- Top Action Bar ---
     action_cols = st.columns([3, 1])
     with action_cols[0]:
-        if st.button("➕ Create New API Service", use_container_width=False, type="primary"):
+        if st.button("➕ Create New API Service", width='content', type="primary"):
             new_service = {
                 'id': str(uuid.uuid4()),
                 'service_name': 'service_newapi',
@@ -1135,7 +1132,7 @@ def render_api_generator_tab():
     
     with action_cols[1]:
         if ws_state.get('api_services'):
-            if st.button("🗑️ Clear All", use_container_width=True):
+            if st.button("🗑️ Clear All", width='stretch'):
                 ws_state['api_services'] = []
                 st.rerun()
 
@@ -1163,11 +1160,11 @@ def render_api_list_view():
                 st.markdown(f"<div style='font-size: 1.2rem; font-weight: 600;'>{service.get('service_name', 'service_untitled')}</div><br>", unsafe_allow_html=True)
                 st.markdown(f"<p style='font-size: 0.85rem; color: #a3a3a3; margin-top: -8px;'>PATH: <code style='font-size: inherit; padding: 0.2em 0.4em; position: relative; top: -1px;'>{service.get('endpoint_path', '/')}</code></p>", unsafe_allow_html=True)
             with cols[1]:
-                if st.button("✏️ Edit", key=f"edit_api_{service['id']}", use_container_width=True):
+                if st.button("✏️ Edit", key=f"edit_api_{service['id']}", width='stretch'):
                     ws_state['editing_api_service_id'] = service['id']
                     st.rerun()
             with cols[2]:
-                if st.button("🗑️ Delete", key=f"delete_api_{service['id']}", use_container_width=True):
+                if st.button("🗑️ Delete", key=f"delete_api_{service['id']}", width='stretch'):
                     ws_state['api_services'].pop(i)
                     st.rerun()
 
@@ -1305,7 +1302,7 @@ def render_editor_form(service_data):
             on_change=lambda: service_data.update({'req_body_sample': st.session_state[f"editor_req_body_{service_id}"]})
         )
 
-        if st.button("✨ Analyze Request & Generate Arguments", key=f"editor_analyze_{service_id}", use_container_width=True):
+        if st.button("✨ Analyze Request & Generate Arguments", key=f"editor_analyze_{service_id}", width='stretch'):
             # (Logic การ Analyze เดิม)
             try:
                 service_data['analyzed_fields'] = {}
@@ -1384,7 +1381,7 @@ def render_editor_form(service_data):
                         on_change=lambda: service_data.update({'resp_body_sample': st.session_state[f"editor_resp_body_{service_id}"]})
                     )
 
-                    if st.button("🔍 Analyze Response & Find Variables", key=f"editor_analyze_resp_{service_id}", use_container_width=True):
+                    if st.button("🔍 Analyze Response & Find Variables", key=f"editor_analyze_resp_{service_id}", width='stretch'):
                         try:
                             resp_json = json.loads(service_data['resp_body_sample'])
                             found_paths = flatten_json_with_paths(resp_json)
@@ -1830,9 +1827,10 @@ def render_studio_tab():
         csv_creator_dialog()
 
     # --- 1. สร้าง 3 แท็บหลัก ---
-    tab_assets, tab_data, tab_flow, tab_crud = st.tabs([
+    tab_assets, tab_data, tab_kw_factory, tab_flow, tab_crud = st.tabs([
         "📚 Assets", 
-        "🗃️ Test Data", 
+        "🗃️ Test Data",
+        "🏭 Keyword Factory", 
         "📈 Test Flow",
         "✨ CRUD Generator"
     ])
@@ -1841,11 +1839,12 @@ def render_studio_tab():
     with tab_assets:
         render_resources_view_new()
 
-    # --- 3. เนื้อหาของแท็บ Test Data ---
     with tab_data:
         render_test_data_tab()
 
-    # --- 4. เนื้อหาของแท็บ Test Flow ---
+    with tab_kw_factory: 
+        render_keyword_factory_tab()
+
     with tab_flow:
         render_test_flow_tab()
 
@@ -1876,9 +1875,12 @@ def html_editor_dialog():
     # เรียกใช้ฟังก์ชัน dialog ที่เพิ่งสร้าง
     edit_html()
 
+
 def render_resources_view_new():
     """ 
-    Renders the Resources view in a two-column layout with collapsible sections and bug fixes.
+    Renders the Resources view in a two-column layout.
+    [MODIFIED V2] Replaced Menu Locator text_area with a friendly UI
+    using st.data_editor and tabs.
     """
     ws_state = st.session_state.studio_workspace
     
@@ -1893,7 +1895,6 @@ def render_resources_view_new():
         st.markdown("#### <i class='fa-solid fa-cubes'></i> Common Keywords", unsafe_allow_html=True)
         
         with st.container(border=True):
-            # 🎯 1. แสดงสถานะของไฟล์ที่กำลังใช้งานอยู่
             current_kw_file = ws_state.get('common_keyword_path', 'N/A')
             st.caption(f"Loaded from: **{current_kw_file}**")
 
@@ -1902,148 +1903,206 @@ def render_resources_view_new():
                 key="studio_keyword_uploader_final", label_visibility="collapsed"
             )
             
+
             if uploaded_keyword_file:
-                # 🎯 2. ตรวจสอบว่าไฟล์ที่อัปโหลดเป็นไฟล์ใหม่จริงๆ (ป้องกันการ rerun ซ้ำ)
                 if uploaded_keyword_file.name != ws_state.get('common_keyword_path'):
                     with st.spinner(f"Parsing {uploaded_keyword_file.name}..."):
                         try:
                             content = uploaded_keyword_file.getvalue().decode("utf-8")
-                            # 🎯 3. เขียนทับ (Overwrite) keywords และชื่อไฟล์เดิม
+                            
                             ws_state['keywords'] = parse_robot_keywords(content)
-                            ws_state['common_keyword_path'] = uploaded_keyword_file.name
-                            st.success(f"Successfully replaced keywords with '{uploaded_keyword_file.name}'!")
-                            # สั่ง rerun เพื่อให้ UI อัปเดตทั้งหมด
+                            
+                            all_variables = read_robot_variables_from_content(content)
+                            
+                            ws_state['common_variables'] = [
+                                v for v in all_variables 
+                                if v.get('name') not in MENU_LOCATOR_NAMES
+                            ]
+                            
+                            
+                            ws_state['common_keyword_path'] = uploaded_keyword_file.name                                
+                            st.success(f"Successfully replaced keywords and variables with '{uploaded_keyword_file.name}'!")
                             st.rerun() 
                         except Exception as e:
                             st.error(f"Failed to parse file: {e}")
 
-            # ========== START: ส่วนที่แก้ไขใหม่ ==========
+            # --- START: [V3] Common Variables Display (Green) ---
+            if ws_state.get('common_variables'):
+                
+                valid_vars = [v for v in ws_state['common_variables'] if v.get('name')]
+                
+                with st.expander(f"Show/Hide Loaded Common Variables ({len(valid_vars)} items)", expanded=True):
+                    
+                    st.markdown("""<style>
+                    .common-var-code {
+                        background-color: rgba(40, 167, 69, 0.1);
+                        border: 1px solid rgba(40, 167, 69, 0.3);
+                        color: #28a745; /* Green color */
+                        padding: 3px 8px;
+                        border-radius: 8px;
+                        font-family: monospace;
+                        font-size: 0.85rem;
+                        display: block;
+                        margin-bottom: 4px;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                    }
+                    .common-var-code:hover { background-color: rgba(40, 167, 69, 0.2); }
+                    </style>""", unsafe_allow_html=True)
+
+                    sorted_vars = sorted(valid_vars, key=lambda x: x.get('name'))
+                    
+                    if not sorted_vars:
+                        st.caption("No valid common variables found in the file.")
+                    else:
+                        num_columns = 3
+                        cols = st.columns(num_columns)
+                        
+                        for i, var in enumerate(sorted_vars):
+                            var_name = var.get('name')
+                            prefix = '&' if var.get('type') == 'dict' else '$' 
+                            
+                            with cols[i % num_columns]:
+                                st.markdown(
+                                    f"<div class='common-var-code' title='{prefix}{{{var_name}}}'>{prefix}{{{var_name}}}</div>", 
+                                    unsafe_allow_html=True
+                                )
+            # --- END: [V3] Common Variables Display ---
+
+
+            # --- Keywords Display (Original) ---
             if ws_state.get('keywords'):
-                # --- ใช้ Module ใหม่สำหรับการจัดกลุ่ม Keywords (Task-Based Workflow) ---
-                with st.expander("Show/Hide Loaded Keywords", expanded=True):
+                with st.expander(f"Show/Hide Loaded Keywords ({len(ws_state['keywords'])} items)", expanded=True):
                     all_keywords = ws_state['keywords']
                     
-                    # ========== START: เพิ่ม CSS เพื่อลดช่องว่างระหว่าง Expander ==========
                     st.markdown("""
                         <style>
-                            [data-testid="stExpander"] {
-                                margin-bottom: 1px !important; /* ลดช่องว่างด้านล่างของแต่ละ Expander */
-                            }
+                            [data-testid="stExpander"] { margin-bottom: 1px !important; }
                         </style>
                     """, unsafe_allow_html=True)
-                    # ========== END: สิ้นสุดส่วนที่เพิ่ม ==========
 
-                    # เรียกใช้ฟังก์ชันจาก module
                     categorized = categorize_keywords(all_keywords)
                     stats = get_category_stats(categorized)
                     expansion_config = get_expansion_config()
                     
-                    # แสดงสถิติโดยรวม
                     col_stats1, col_stats2, col_stats3 = st.columns(3)
-                    with col_stats1:
-                        st.metric("📊 Total Keywords", stats['total_keywords'])
-                    with col_stats2:
-                        st.metric("📁 Categories", stats['total_categories'])
-                    with col_stats3:
-                        st.metric("🧩 Others", stats['uncategorized'])
-                    
+                    with col_stats1: st.metric("📊 Total Keywords", stats['total_keywords'])
+                    with col_stats2: st.metric("📁 Categories", stats['total_categories'])
+                    with col_stats3: st.metric("🧩 Others", stats['uncategorized'])
                     st.markdown("---")
                     
-                    # 🎯 START: แก้ไขการเรียงลำดับและจัดคอลัมน์
-                    
-                    # 1. แก้ไขการเรียงลำดับให้ถูกต้องสมบูรณ์
                     categories_to_sort = [k for k in categorized.keys() if k != "🧩 Others"]
                     sorted_categories = sorted(categories_to_sort, key=get_category_priority)
                     if "🧩 Others" in categorized and categorized["🧩 Others"]:
                         sorted_categories.append("🧩 Others")
 
-                    # 2. แบ่งรายการหมวดหมู่เพื่อแสดงผลเป็น 2 คอลัมน์
                     mid_point = (len(sorted_categories) + 1) // 2
                     left_col_categories = sorted_categories[:mid_point]
                     right_col_categories = sorted_categories[mid_point:]
-
                     col1, col2 = st.columns(2)
 
-                    # --- แสดงผลคอลัมน์ซ้าย ---
                     with col1:
                         for category in left_col_categories:
                             kws = categorized.get(category, [])
-                            if not kws:
-                                continue
-                            
+                            if not kws: continue
                             is_expanded = expansion_config.get(category, False)
                             with st.expander(f"**{category}**", expanded=is_expanded):
                                 for kw in sorted(kws, key=lambda x: x['name']):
                                     with st.expander(f"`{kw['name']}`"):
-                                        if kw.get('doc'):
-                                            st.info(f"**Doc:** {kw['doc']}")
-                                        else:
-                                            st.caption("_No documentation available_")
-                                        
-                                        if kw.get('args'):
-                                            args_str = " ".join([f"`{arg['name']}`" for arg in kw.get('args', [])])
-                                            st.markdown(f"**Args:** {args_str}")
-                                        else:
-                                            st.markdown("**Args:** _None_")
+                                        st.info(f"**Doc:** {kw['doc']}") if kw.get('doc') else st.caption("_No documentation_")
+                                        st.markdown(f"**Args:** {' '.join([f'`{arg['name']}`' for arg in kw.get('args', [])])}" if kw.get('args') else "**Args:** _None_")
 
-                    # --- แสดงผลคอลัมน์ขวา ---
                     with col2:
                         for category in right_col_categories:
                             kws = categorized.get(category, [])
-                            if not kws:
-                                continue
-                            
+                            if not kws: continue
                             is_expanded = expansion_config.get(category, False)
                             with st.expander(f"**{category}**", expanded=is_expanded):
                                 for kw in sorted(kws, key=lambda x: x['name']):
                                     with st.expander(f"`{kw['name']}`"):
-                                        if kw.get('doc'):
-                                            st.info(f"**Doc:** {kw['doc']}")
-                                        else:
-                                            st.caption("_No documentation available_")
-                                        
-                                        if kw.get('args'):
-                                            args_str = " ".join([f"`{arg['name']}`" for arg in kw.get('args', [])])
-                                            st.markdown(f"**Args:** {args_str}")
-                                        else:
-                                            st.markdown("**Args:** _None_")
+                                        st.info(f"**Doc:** {kw['doc']}") if kw.get('doc') else st.caption("_No documentation_")
+                                        st.markdown(f"**Args:** {' '.join([f'`{arg['name']}`' for arg in kw.get('args', [])])}" if kw.get('args') else "**Args:** _None_")
 
     # --- RIGHT PANEL: LOCATORS ---
     with panel_grid[1]:
         st.markdown("#### <i class='fa-solid fa-bullseye'></i> Locators", unsafe_allow_html=True)
         with st.container(border=True):
-            with st.expander("📁 Load from .robot file"):
-                uploaded_locator_file = st.file_uploader("Browse for a locator file", type=['robot', 'resource'], key="studio_locator_uploader_final_2")
-                if uploaded_locator_file:
-                    with st.spinner(f"Loading from {uploaded_locator_file.name}..."):
-                        content = uploaded_locator_file.getvalue().decode("utf-8")
-                        locators = read_robot_variables_from_content(content)
-                        for loc in locators:
-                            loc['page_name'] = uploaded_locator_file.name
-                        ws_state['locators'].extend(locators)
-                        st.success(f"Loaded {len(locators)} locators.")
+            with st.expander("📁 Load from .robot file(s)", expanded=True):
+                
+                ws_state.setdefault('upload_warnings', [])
+                warnings_to_remove = []
 
+                if ws_state['upload_warnings']:
+                    st.markdown("---")
+                    
+                for i, filename in enumerate(ws_state['upload_warnings']):
+                    col1, col2 = st.columns([0.9, 0.1])
+                    with col1: st.warning(f"File '{filename}' is already loaded. Skipping.", icon="⚠️")
+                    with col2:
+                        if st.button("✕", key=f"dismiss_warn_{filename.replace('.', '_')}_{i}", help="Dismiss this warning"):
+                            warnings_to_remove.append(filename)
+                
+                if warnings_to_remove:
+                    for filename in warnings_to_remove:
+                        if filename in ws_state['upload_warnings']:
+                            ws_state['upload_warnings'].remove(filename)
+                    st.rerun()
+
+                uploaded_locator_files = st.file_uploader(
+                    "Browse for locator files (multi-upload)", 
+                    type=['robot', 'resource'], 
+                    key="studio_locator_uploader_final_2",
+                    accept_multiple_files=True
+                )
+                
+                if uploaded_locator_files:
+                    total_loaded = 0
+                    new_files_processed = False
+                    new_warnings_added = False
+
+                    for uploaded_file in uploaded_locator_files:
+                        if any(loc.get('page_name') == uploaded_file.name for loc in ws_state['locators']):
+                            if uploaded_file.name not in ws_state['upload_warnings']:
+                                ws_state['upload_warnings'].append(uploaded_file.name)
+                                new_warnings_added = True
+                            continue
+                        
+                        new_files_processed = True
+                        with st.spinner(f"Loading from {uploaded_file.name}..."):
+                            content = uploaded_file.getvalue().decode("utf-8")
+                            locators = read_robot_variables_from_content(content)
+                            for loc in locators:
+                                loc['page_name'] = uploaded_file.name
+                                if 'id' not in loc or not loc['id']:
+                                    loc['id'] = str(uuid.uuid4())
+                            ws_state['locators'].extend(locators)
+                            total_loaded += len(locators)
+
+                    if new_files_processed: st.success(f"Loaded {total_loaded} new locators.")
+                    if new_files_processed or new_warnings_added: st.rerun()
+            
             with st.expander("📄 Add from HTML", expanded=True):
                 for i, page in enumerate(ws_state['html_pages']):
                     col1, col2, col3 = st.columns([0.6, 0.3, 0.1])
                     with col1:
                         page['name'] = st.text_input(f"Page Name {i+1}", value=page['name'], key=f"studio_html_page_name_{i}", label_visibility="collapsed", placeholder=f"Page Name {i+1}")
                     with col2:
-                        if st.button(f"✏️ Edit HTML", key=f"studio_edit_html_{i}", use_container_width=True):
+                        if st.button(f"✏️ Edit HTML", key=f"studio_edit_html_{i}", width='stretch'):
                             ws_state['editing_html_index'] = i
                             st.rerun()
                     with col3:
                          if len(ws_state['html_pages']) > 1:
-                            if st.button(f"🗑️", key=f"studio_remove_html_page_{i}", help="Remove this page", use_container_width=True):
+                            if st.button(f"🗑️", key=f"studio_remove_html_page_{i}", help="Remove this page", width='stretch'):
                                 ws_state['html_pages'].pop(i)
                                 st.rerun()
 
-                if st.button("➕ Add another HTML page", use_container_width=True, type="secondary"):
+                if st.button("➕ Add another HTML page", width='stretch', type="secondary"):
                     ws_state['html_pages'].append({'name': f'Page {len(ws_state["html_pages"]) + 1}', 'html': ''})
                     st.rerun()
                 
                 st.markdown("---")
-                if st.button("Find All Locators from HTML", use_container_width=True, type="primary"):
+                if st.button("Find All Locators from HTML", width='stretch', type="primary"):
                     with st.spinner("Finding locators..."):
                         parser = HTMLLocatorParser()
                         new_locators_found = 0
@@ -2075,59 +2134,69 @@ def render_resources_view_new():
                 ws_state['locators'][idx]['id'] = str(uuid.uuid4())
         with st.expander("#### 📝 Locator Staging Area", expanded=True):
             
-            file_locators = [loc for loc in ws_state['locators'] if loc.get('page_name') not in [p['name'] for p in ws_state.get('html_pages', [])]]
-            html_locators_with_indices = {i: loc for i, loc in enumerate(ws_state['locators']) if loc.get('page_name') in [p['name'] for p in ws_state.get('html_pages', [])]}
+            html_page_names = [p['name'] for p in ws_state.get('html_pages', [])]
+            all_file_locators = [
+                loc for loc in ws_state['locators'] 
+                if loc.get('page_name') not in html_page_names
+            ]
+            
+            locators_by_file = {}
+            for loc in all_file_locators:
+                filename = loc.get('page_name')
+                if not filename: continue
+                if filename not in locators_by_file:
+                    locators_by_file[filename] = []
+                locators_by_file[filename].append(loc)
 
-            st.markdown("<h6>🔒 From Files (Read-Only)</h6>", unsafe_allow_html=True)
-            if file_locators:
-                with st.expander(f"Loaded {len(file_locators)} locators from files", expanded=False):
-                    # 🎯 START: แก้ไขโค้ดส่วนนี้ทั้งหมด
-                    # 1. เพิ่ม CSS สำหรับจัดสไตล์ให้สวยงาม
-                    st.markdown("""
-                        <style>
-                        .locator-grid-container {
-                            display: grid;
-                            grid-template-columns: repeat(4, 1fr);
-                            gap: 8px;
-                        }
-                        .locator-pill {
-                            background-color: rgba(88, 166, 255, 0.1);
-                            border: 1px solid rgba(88, 166, 255, 0.2);
-                            color: #cbd5e1;
-                            padding: 5px 10px;
-                            border-radius: 12px;
-                            font-family: monospace;
-                            font-size: 0.8rem;
-                            white-space: nowrap;
-                            overflow: hidden;
-                            text-overflow: ellipsis;
-                            text-align: left;
-                        }
-                        </style>
-                    """, unsafe_allow_html=True)
-                    
-                    # 2. สร้าง HTML สำหรับ Grid Layout
-                    html_grid = "<div class='locator-grid-container'>"
-                    for loc in sorted(file_locators, key=lambda x: x['name']):
-                        clean_name = get_clean_locator_name(loc['name'])
-                        html_grid += f"<div class='locator-pill' title='{clean_name}'>{clean_name}</div>"
-                    html_grid += "</div>"
-                    
-                    # 3. แสดงผล HTML ที่สร้างขึ้น
-                    st.markdown(html_grid, unsafe_allow_html=True)
-
-                    # 🎯 END: สิ้นสุดการแก้ไข
-            else:
+            st.markdown("<h6>🔒 From Files (Loaded)</h6>", unsafe_allow_html=True)
+            if not locators_by_file:
                 with st.container(border=True):
                     st.caption("No locators loaded from files yet.")
+            else:
+                for filename in sorted(locators_by_file.keys()):
+                    locators_in_file = locators_by_file[filename]
+                    
+                    with st.expander(f"📄 **{filename}** ({len(locators_in_file)} items)", expanded=False):
+                        
+                        if st.button(
+                            f"🗑️ Unload locators from '{filename}'", 
+                            key=f"unload_file_{filename.replace('.', '_')}",
+                            width='content',
+                            type="secondary"
+                        ):
+                            ws_state['locators'] = [
+                                loc for loc in ws_state['locators'] 
+                                if loc.get('page_name') != filename
+                            ]
+                            st.success(f"Unloaded {len(locators_in_file)} locators from '{filename}'.")
+                            st.rerun()
+                       
+                        st.markdown("""
+                            <style>
+                            .locator-grid-container { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+                            .locator-pill {
+                                background-color: rgba(88, 166, 255, 0.1);
+                                border: 1px solid rgba(88, 166, 255, 0.2);
+                                color: #cbd5e1; padding: 5px 10px; border-radius: 12px;
+                                font-family: monospace; font-size: 0.8rem;
+                                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left;
+                            }
+                            </style>
+                        """, unsafe_allow_html=True)
+                        
+                        html_grid = "<div class='locator-grid-container'>"
+                        for loc in sorted(locators_in_file, key=lambda x: x['name']):
+                            clean_name = get_clean_locator_name(loc['name'])
+                            html_grid += f"<div class='locator-pill' title='{clean_name}'>{clean_name}</div>"
+                        html_grid += "</div>"
+                        st.markdown(html_grid, unsafe_allow_html=True)
 
-            # --- "From HTML" Display (Table Layout with Expandable Pages) ---
+
             st.markdown("<h6>✏️ From HTML (Editable)</h6>", unsafe_allow_html=True)
             
-            # 1. จัดกลุ่ม Locators ตาม page_name
             html_locators_by_page = {}
             for i, loc in enumerate(ws_state['locators']):
-                if loc.get('page_name') in [p['name'] for p in ws_state.get('html_pages', [])]:
+                if loc.get('page_name') in html_page_names:
                     page_name = loc['page_name']
                     if page_name not in html_locators_by_page:
                         html_locators_by_page[page_name] = []
@@ -2137,144 +2206,69 @@ def render_resources_view_new():
                 with st.container(border=True):
                     st.caption("No locators added from HTML yet.")
             else:
-                # --- CSS สำหรับ Table ---
                 st.markdown("""
                     <style>
                     .locator-header {
-                        display: grid;
-                        grid-template-columns: 40% 50% 10%;
-                        font-weight: 600;
-                        padding: 8px 4px;
+                        display: grid; grid-template-columns: 40% 50% 10%;
+                        font-weight: 600; padding: 8px 4px;
                         background-color: rgba(128, 128, 128, 0.15);
-                        border-radius: 4px;
-                        margin-bottom: 8px;
-                        font-size: 0.9rem;
+                        border-radius: 4px; margin-bottom: 8px; font-size: 0.9rem;
                     }
-                    .locator-header div {
-                        padding: 0 4px;
-                    }
+                    .locator-header div { padding: 0 4px; }
                     </style>
                 """, unsafe_allow_html=True)
                 
-                # 2. วนลูปแสดงแต่ละ Page ใน Expander แยก
                 for page_name, locators_in_page in html_locators_by_page.items():
                     with st.expander(f"📄 **{page_name}** ({len(locators_in_page)} items)", expanded=True):
                         
-                        # 3. แบ่ง Locators ในแต่ละ Page ออกเป็น 2 ฝั่ง (ซ้าย-ขวา)
                         mid_point = (len(locators_in_page) + 1) // 2
                         left_locators = locators_in_page[:mid_point]
                         right_locators = locators_in_page[mid_point:]
-                        
-                        # 4. สร้าง Layout ซ้าย-ขวา
                         left_panel, right_panel = st.columns([1, 1], gap="medium")
                         
-                        # --- LEFT PANEL ---
                         with left_panel:
                             with st.container(border=True):
-                                st.markdown("""
-                                    <div class="locator-header">
-                                        <div>Name</div>
-                                        <div>Value</div>
-                                        <div style="text-align: center;">Del</div>
-                                    </div>
-                                """, unsafe_allow_html=True)
-                                
+                                st.markdown('<div class="locator-header"><div>Name</div><div>Value</div><div style="text-align: center;">Del</div></div>', unsafe_allow_html=True)
                                 for original_index, locator_data in left_locators:
-                                    # ใช้ id เป็น unique key
                                     loc_id = locator_data.get('id')
                                     if not loc_id:
-                                        # ถ้าไม่มี id (กรณีที่ไม่ควรเกิด) ให้สร้างใหม่
                                         loc_id = str(uuid.uuid4())
                                         locator_data['id'] = loc_id
                                         ws_state['locators'][original_index]['id'] = loc_id   
                                                                          
                                     col_name, col_value, col_action = st.columns([40, 50, 10])
-                                    
-                                    with col_name:
-                                        new_name = st.text_input(
-                                            "Name", 
-                                            value=locator_data['name'], 
-                                            key=f"loc_name_L_{page_name}_{loc_id}",
-                                            label_visibility="collapsed",
-                                            placeholder="Name"
-                                        )
-                                    
-                                    with col_value:
-                                        new_value = st.text_input(
-                                            "Value", 
-                                            value=locator_data['value'], 
-                                            key=f"loc_value_L_{page_name}_{loc_id}",
-                                            label_visibility="collapsed",
-                                            placeholder="XPath"
-                                        )
-                                    
+                                    with col_name: new_name = st.text_input("Name", value=locator_data['name'], key=f"loc_name_L_{page_name}_{loc_id}", label_visibility="collapsed", placeholder="Name")
+                                    with col_value: new_value = st.text_input("Value", value=locator_data['value'], key=f"loc_value_L_{page_name}_{loc_id}", label_visibility="collapsed", placeholder="XPath")
                                     with col_action:
-                                        if st.button("🗑️", key=f"loc_del_L_{page_name}_{loc_id}", help="Delete", use_container_width=True):
-                                            # ลบโดยใช้ id เท่านั้น
-                                            ws_state['locators'] = [
-                                                loc for loc in ws_state['locators'] 
-                                                if loc.get('id') != loc_id
-                                            ]
+                                        if st.button("🗑️", key=f"loc_del_L_{page_name}_{loc_id}", help="Delete", width='stretch'):
+                                            ws_state['locators'] = [loc for loc in ws_state['locators'] if loc.get('id') != loc_id]
                                             st.rerun()
                                     
-                                    # อัปเดตค่าถ้ามีการเปลี่ยนแปลง
                                     if new_name != locator_data['name'] or new_value != locator_data['value']:
-                                        # ใช้ id ในการค้นหาและอัปเดต
                                         for idx, loc in enumerate(ws_state['locators']):
                                             if loc.get('id') == loc_id:
                                                 ws_state['locators'][idx]['name'] = new_name
                                                 ws_state['locators'][idx]['value'] = new_value
                                                 break
                         
-                        # --- RIGHT PANEL ---
                         with right_panel:
                             with st.container(border=True):
-                                st.markdown("""
-                                    <div class="locator-header">
-                                        <div>Name</div>
-                                        <div>Value</div>
-                                        <div style="text-align: center;">Del</div>
-                                    </div>
-                                """, unsafe_allow_html=True)
-                                
+                                st.markdown('<div class="locator-header"><div>Name</div><div>Value</div><div style="text-align: center;">Del</div></div>', unsafe_allow_html=True)
                                 if right_locators:
                                     for original_index, locator_data in right_locators:
-                                        loc_id = locator_data.get('id')  # ✅ เอา default ออก
+                                        loc_id = locator_data.get('id')
                                         if not loc_id:
-                                            # ถ้าไม่มี id (กรณีที่ไม่ควรเกิด) ให้สร้างใหม่
                                             loc_id = str(uuid.uuid4())
                                             locator_data['id'] = loc_id
                                             ws_state['locators'][original_index]['id'] = loc_id
                                         
                                         col_name, col_value, col_action = st.columns([40, 50, 10])
-                                        
-                                        with col_name:
-                                            new_name = st.text_input(
-                                                "Name", 
-                                                value=locator_data['name'], 
-                                                key=f"loc_name_R_{page_name}_{loc_id}",
-                                                label_visibility="collapsed",
-                                                placeholder="Name"
-                                            )
-                                        
-                                        with col_value:
-                                            new_value = st.text_input(
-                                                "Value", 
-                                                value=locator_data['value'], 
-                                                key=f"loc_value_R_{page_name}_{loc_id}",
-                                                label_visibility="collapsed",
-                                                placeholder="XPath"
-                                            )
-                                        
+                                        with col_name: new_name = st.text_input("Name", value=locator_data['name'], key=f"loc_name_R_{page_name}_{loc_id}", label_visibility="collapsed", placeholder="Name")
+                                        with col_value: new_value = st.text_input("Value", value=locator_data['value'], key=f"loc_value_R_{page_name}_{loc_id}", label_visibility="collapsed", placeholder="XPath")
                                         with col_action:
-                                            if st.button("🗑️", key=f"loc_del_R_{page_name}_{loc_id}", help="Delete", use_container_width=True):
-                                                # ลบโดยใช้ id เท่านั้น
-                                                ws_state['locators'] = [
-                                                    loc for loc in ws_state['locators'] 
-                                                    if loc.get('id') != loc_id
-                                                ]
+                                            if st.button("🗑️", key=f"loc_del_R_{page_name}_{loc_id}", help="Delete", width='stretch'):
+                                                ws_state['locators'] = [loc for loc in ws_state['locators'] if loc.get('id') != loc_id]
                                                 st.rerun()
-                                        # อัปเดตค่าถ้ามีการเปลี่ยนแปลง
                                         if new_name != locator_data['name'] or new_value != locator_data['value']:
                                             for idx, loc in enumerate(ws_state['locators']):
                                                 if loc.get('id') == loc_id:
@@ -2284,13 +2278,10 @@ def render_resources_view_new():
                                 else:
                                     st.caption("(Empty)")
 
-            # 4. Export Options (เหมือนเดิม)
-            # --- START: ส่วนที่แก้ไขใหม่ทั้งหมด ---
             st.markdown("---")
             st.subheader("💾 Export Options")
             st.caption("Exports only new locators generated from HTML.")
             
-            # สร้าง State เพื่อจำตัวเลือกของผู้ใช้
             if 'locator_save_option' not in st.session_state:
                 st.session_state.locator_save_option = "Append to Existing File"
 
@@ -2303,7 +2294,6 @@ def render_resources_view_new():
             )
             save_option = st.session_state.locator_save_option
 
-            # --- Logic การดึงและจัดรูปแบบ Locator (ทำครั้งเดียว) ---
             html_locators = [
                 loc for loc in ws_state['locators'] 
                 if loc.get('page_name') in [p['name'] for p in ws_state.get('html_pages', [])]
@@ -2311,17 +2301,21 @@ def render_resources_view_new():
             
             locators_string = ""
             if html_locators:
-                max_len = max(len(f"${{{loc['name']}}}") for loc in html_locators) + 4
-                locators_string = "\n".join([
-                    f"{f'${{{loc['name']}}}'.ljust(max_len)}{loc['value']}"
-                    for loc in sorted(html_locators, key=lambda x: x['name'])
-                ])
+                if all(len(loc['name']) > 0 for loc in html_locators):
+                    # Filter out any locators with empty names before calculating max_len
+                    named_locators = [loc for loc in html_locators if loc['name']]
+                    if named_locators:
+                        max_len = max(len(f"${{{loc['name']}}}") for loc in named_locators) + 4
+                        locators_string = "\n".join([
+                            f"{f'${{{loc['name']}}}'.ljust(max_len)}{loc['value']}"
+                            for loc in sorted(named_locators, key=lambda x: x['name'])
+                        ])
+                else:
+                    st.warning("Some HTML locators have empty names and cannot be exported.")
 
             if save_option == "Append to Existing File":
-                # --- UI สำหรับ APPEND ---
                 all_robot_files = st.session_state.project_structure.get('robot_files', [])
                 target_folder = "pageobjects"
-                
                 pageobject_files = [
                     f for f in all_robot_files 
                     if f.replace(os.sep, '/').startswith(target_folder + '/')
@@ -2338,7 +2332,7 @@ def render_resources_view_new():
                     )
                     
                     if st.button("➕ Append Locators", key="append_locators_btn"):
-                        if not html_locators:
+                        if not html_locators or not locators_string:
                             st.warning("No new locators from HTML to save.")
                         else:
                             full_path = os.path.join(st.session_state.project_path, selected_file)
@@ -2346,13 +2340,10 @@ def render_resources_view_new():
                                 full_path, 
                                 variables_code=locators_string
                             )
-                            if success:
-                                st.success(message)
-                            else:
-                                st.error(message)
+                            if success: st.success(message)
+                            else: st.error(message)
 
             elif save_option == "Create New File":
-                # --- UI สำหรับ CREATE NEW ---
                 st.caption("File will be saved in the `pageobjects` folder.")
                 new_file_name = st.text_input(
                     "New file name:",
@@ -2361,12 +2352,11 @@ def render_resources_view_new():
                 )
                 
                 if st.button("📝 Create and Save File", key="create_locators_btn"):
-                    if not html_locators:
+                    if not html_locators or not locators_string:
                         st.warning("No new locators from HTML to save.")
                     elif not new_file_name.endswith(('.robot', '.resource')):
                         st.error("File name must end with .robot or .resource")
                     else:
-                    # สร้างเนื้อหาพร้อม block marker
                         full_content = textwrap.dedent(f"""
 *** Settings ***
 Resource            ../resources/commonkeywords.resource
@@ -2385,22 +2375,18 @@ Resource            ../resources/commonkeywords.resource
                         
                         success = create_new_robot_file(full_path, full_content)
                         if success:
-                            # เก็บข้อความและ path ไว้ใน session_state
                             st.session_state['show_file_created_success'] = {
                                 'path': os.path.relpath(full_path, st.session_state.project_path)
                             }
-                            # สแกนโปรเจกต์ใหม่
                             st.session_state.project_structure = scan_robot_project(st.session_state.project_path)
                             st.rerun()
                         else:
                             st.error("Failed to create the file.")
            
-    # แสดงข้อความ success หลัง rerun (วางไว้นอก if button)
         if 'show_file_created_success' in st.session_state and st.session_state.show_file_created_success:
             success_data = st.session_state.show_file_created_success
             st.success(f"✅ Successfully created file at `{success_data['path']}`")
-            # เคลียร์ข้อความหลังแสดงแล้ว
-            del st.session_state['show_file_created_success']        
+            del st.session_state.show_file_created_success
 
 # ============================================================================
 # MAIN APPLICATION

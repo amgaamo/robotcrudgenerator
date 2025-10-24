@@ -7,6 +7,7 @@ import re
 import streamlit as st
 import pandas as pd
 from datetime import datetime 
+from .utils import parse_robot_variables, parse_data_sources
 
 def scan_robot_project(path):
     """Scan Robot Framework project structure"""
@@ -78,27 +79,22 @@ def create_new_robot_file(file_path, content):
         return False
 
 def read_robot_variables_from_content(content: str):
-    """Reads variables from a string content instead of a file path."""
+    """
+    Reads variables from a string content instead of a file path.
+    (Refactored to call utils.py and handle Streamlit warnings here)
+    """
     try:
+        # 2. แก้ไข: เรียกใช้ฟังก์ชันจาก utils
+        locators = parse_robot_variables(content)
+        
+        # 3. ย้าย: Logic การแสดง warning มาไว้ที่นี่
         variables_match = re.search(r'\*\*\* Variables \*\*\*(.*?)(?=\*\*\*|$)', content, re.DOTALL | re.IGNORECASE)
         if not variables_match:
             st.warning("Could not find a '*** Variables ***' section in the content.")
-            return []
-
-        variables_content = variables_match.group(1)
-        locators = []
-        variable_pattern = re.compile(r'^\s*\$\{([^}]+)\}\s+(.+?)\s*$', re.MULTILINE)
-
-        for match in variable_pattern.finditer(variables_content):
-            variable_name = match.group(1).strip()
-            if variable_name.upper().startswith('LOCATOR_'):
-                locators.append({
-                    'name': variable_name,
-                    'value': match.group(2).strip()
-                })
         
-        if not locators:
+        if variables_match and not locators:
             st.warning("No variables starting with `LOCATOR_` found.")
+            
         return locators
     except Exception as e:
         st.error(f"An error occurred while parsing content: {str(e)}")
@@ -413,97 +409,3 @@ def append_to_api_base(file_path, variable_line, keyword_line):
         return False, f"Error: {os.path.basename(file_path)} not found."
     except Exception as e:
         return False, f"An error occurred: {e}"
-
-# ===================================================================
-# ===== 🎯 START: NEW FUNCTION FOR DATASOURCE PARSING (V.2) =====
-# ===================================================================
-
-def parse_data_sources_from_resource(content: str):
-    """
-    Parses a datasources.resource file content to extract CSV paths.
-    V.7: Fixed path cleaning and proper filename extraction.
-    """
-    variables = {}
-    data_sources = []
-
-    try:
-        # 1. Parse *** Variables *** section
-        variables_match = re.search(r'\*\*\* Variables \*\*\*(.*?)(?=\*\*\*|$)', content, re.DOTALL | re.IGNORECASE)
-        if variables_match:
-            variables_content = variables_match.group(1)
-            var_pattern = re.compile(r'^\s*\$\{([^}]+)\}\s+([^\s].*?)\s*(?:#.*)?$', re.MULTILINE)
-            for match in var_pattern.finditer(variables_content):
-                var_name = match.group(1).strip()
-                var_value = match.group(2).strip()
-                variables[var_name] = var_value
-
-        # 2. Parse *** Keywords *** section
-        keywords_match = re.search(r'\*\*\* Keywords \*\*\*(.*)', content, re.DOTALL | re.IGNORECASE)
-        if keywords_match:
-            keywords_content = keywords_match.group(1)
-            keyword_blocks = re.split(r'\n(?=\S)', keywords_content.strip())
-
-            for block in keyword_blocks:
-                lines = block.strip().split('\n')
-                keyword_name_line = lines[0].strip()
-                
-                if not keyword_name_line.lower().startswith('import datasource'):
-                    continue 
-                
-                csv_var_match = re.search(r'Import datasource file\s+\$\{([^}]+)\}', block, re.IGNORECASE)
-                ds_var_match = re.search(r'Set Global Variable\s+\$\{(DS_[^}]+)\}', block, re.IGNORECASE)
-                col_var_match = re.search(r'Set Global Variable\s+\$\{([^}]+)\}\s+\$\{value_col\}', block, re.IGNORECASE)
-
-                if csv_var_match and ds_var_match and col_var_match:
-                    csv_path_var_name = csv_var_match.group(1)
-                    ds_name = ds_var_match.group(1)
-                    col_name = col_var_match.group(1)
-
-                    # --- ✅ FIXED: Proper path cleaning and filename extraction ---
-                    csv_file_name = "NOT_FOUND"
-                    if csv_path_var_name in variables:
-                        full_path_value = variables[csv_path_var_name]
-                        # Example: ${CURDIR}${/}datatest${/}login_data.csv
-                        
-                        # Step 1: Remove all Robot Framework variables
-                        clean_path = full_path_value
-                        clean_path = re.sub(r'\$\{CURDIR\}', '', clean_path)
-                        clean_path = re.sub(r'\$\{/\}', '/', clean_path)
-                        clean_path = re.sub(r'\$\{[^}]+\}', '', clean_path)  # Remove any other ${...}
-                        
-                        # Step 2: Clean up the path (remove leading/trailing slashes and spaces)
-                        clean_path = clean_path.strip().strip('/')
-                        # clean_path should now be: datatest/login_data.csv
-                        
-                        # Step 3: Extract only the filename (last part after /)
-                        if '/' in clean_path:
-                            csv_file_name = clean_path.split('/')[-1]
-                        else:
-                            csv_file_name = clean_path
-                        
-                        # Step 4: Extra safety - ensure .csv extension and clean any trailing chars
-                        csv_file_name = csv_file_name.strip()
-                        if not csv_file_name.endswith('.csv'):
-                            # Try to find .csv in the string
-                            csv_match = re.search(r'([^/\\]+\.csv)', csv_file_name)
-                            if csv_match:
-                                csv_file_name = csv_match.group(1)
-                    else:
-                        print(f"Warning: Variable '${csv_path_var_name}' not found in *** Variables ***")
-
-                    data_sources.append({
-                        'file_name': csv_file_name,
-                        'name': ds_name,
-                        'col_name': col_name,
-                        'is_imported': True
-                    })
-
-        return data_sources
-
-    except Exception as e:
-        st.error(f"Error parsing datasources file: {e}")
-        return []
-
-# ===================================================================
-# ===== 🎯 END: NEW FUNCTION =====
-# ===================================================================

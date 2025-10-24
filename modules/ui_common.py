@@ -6,8 +6,10 @@ Contains shared UI components and helper functions used across different modules
 import streamlit as st
 import uuid
 import json
+import numpy as n
 from pathlib import Path
-from .session_manager import get_clean_locator_name # Import needed helper
+from .utils import util_get_csv_headers, get_clean_locator_name, format_args_as_string
+from .keyword_categorizer import categorize_keywords
 
 # --- Argument Preset Loading (Moved from ui_test_flow.py) ---
 def load_argument_presets():
@@ -408,11 +410,11 @@ def get_available_csv_datasources(ws_state):
     Returns:
         dict: {ds_name: {ds_var, col_var, csv_filename, headers}}
     """
-    from .crud_generator import manager  # Import here to avoid circular import
-    
+   
     result = {}
     data_sources = ws_state.get('data_sources', [])
-    
+    project_path = st.session_state.get('project_path', '')
+
     for ds in data_sources:
         ds_name = ds.get('name', '').upper()
         csv_filename = ds.get('file_name', '')
@@ -422,7 +424,7 @@ def get_available_csv_datasources(ws_state):
             continue
         
         # Get CSV headers
-        headers = manager.get_csv_headers(csv_filename)
+        headers = util_get_csv_headers(project_path, csv_filename)
         
         result[ds_name] = {
             'ds_var': f"DS_{ds_name.replace(' ', '_')}",
@@ -533,3 +535,489 @@ def render_csv_insert_button(input_key, ws_state, button_label="📊"):
             st.info("💡 Enter row key to continue")
     
     return None
+
+# ======= REVISED STEP CARD (V3.6) =======
+def render_step_card_compact(step, index, section_key, ws, manager_module, card_prefix="crud"):
+    """
+    REVISED (V3.11) - Enhanced CSV/API config display
+    Displays CSV configuration in caption.
+    Inline Editing similar to ui_test_flow.
+    """
+    real_section_key = section_key
+    ws_state = st.session_state.studio_workspace
+
+    # --- Logic to handle 'virtual' section keys ---
+    if section_key == 'action_detail_others':
+        real_section_key = 'action_detail'
+        steps_list_for_display = [s for s in ws['steps']['action_detail'] if s['keyword'] != 'Fill in data form']
+    elif section_key == 'verify_detail_others':
+        real_section_key = 'verify_detail'
+        steps_list_for_display = [s for s in ws['steps']['verify_detail'] if s['keyword'] != 'Verify data form']
+    else:
+        if real_section_key not in ws['steps']: 
+            ws['steps'][real_section_key] = []
+        steps_list_for_display = ws['steps'][real_section_key]
+
+    try:
+        display_index = next(i for i, s in enumerate(steps_list_for_display) if s['id'] == step['id'])
+    except StopIteration:
+        display_index = index
+
+    try:
+        original_list = ws['steps'][real_section_key]
+        real_index = next(i for i, s in enumerate(original_list) if s['id'] == step['id'])
+        total_steps_in_original = len(original_list)
+    except StopIteration:
+        st.error(f"Debug: Step ID {step['id']} not found in original list {real_section_key}")
+        real_index = index
+        total_steps_in_original = len(original_list) if original_list else 0
+
+    # --- Edit Mode State ---
+    edit_mode_key = f'crud_edit_mode_{step["id"]}'
+    edit_mode = st.session_state.get(edit_mode_key, False)
+
+    st.markdown("<div class='step-card'>", unsafe_allow_html=True)
+
+    # === CARD HEADER ===
+    with st.container():
+        kw_col, btn_col = st.columns([0.6, 0.4], vertical_alignment="center")
+
+        with kw_col:
+            st.markdown(f"""
+            <div class='step-header-content'>
+                <span class='step-number-inline'>{display_index + 1}</span>
+                <div class='step-keyword'>
+                    <div class='step-keyword-label'>KEYWORD</div>
+                    <div class='step-keyword-name'>{step.get('keyword', 'N/A')}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with btn_col:
+            # --- Toolbar Code ---
+            st.markdown("<div class='step-card-toolbar-wrapper'>", unsafe_allow_html=True)
+            action_cols = st.columns([1, 1, 1, 1, 1], gap="small")
+            
+            with action_cols[0]:
+                is_first = (real_index == 0)
+                if st.button("⬆️", key=f"up_{real_section_key}_{step['id']}", help="Move Up", use_container_width=True, disabled=is_first):
+                    manager_module.move_step(real_section_key, step['id'], 'up')
+                    st.rerun()
+            
+            with action_cols[1]:
+                is_last = (real_index == total_steps_in_original - 1)
+                if st.button("⬇️", key=f"down_{real_section_key}_{step['id']}", help="Move Down", use_container_width=True, disabled=is_last):
+                    manager_module.move_step(real_section_key, step['id'], 'down')
+                    st.rerun()
+            
+            with action_cols[2]:
+                edit_icon = "💾" if edit_mode else "✏️"
+                edit_help = "Save Changes" if edit_mode else "Edit Step"
+                if st.button(edit_icon, key=f"edit_{real_section_key}_{step['id']}", help=edit_help, use_container_width=True):
+                    # Toggle edit mode
+                    st.session_state[edit_mode_key] = not edit_mode
+
+                    if st.session_state[edit_mode_key]:
+                        edit_kw_state_key = f"edit_kw_select_{step['id']}"
+                        temp_args_key = f"edit_temp_args_{step['id']}"
+
+                       # --- START FIX ---
+                        prev_kw_key = f"prev_kw_{step['id']}" # 1. กำหนดคีย์
+                        current_kw = step.get('keyword', '')  # 2. ดึง KW ปัจจุบัน
+                          
+                        # ✅ เก็บ keyword ปัจจุบัน
+                        st.session_state[edit_kw_state_key] = current_kw
+                          
+                          # 3. (FIX) ตั้งค่า prev_kw ด้วย KW ปัจจุบันทันที
+                        st.session_state[prev_kw_key] = current_kw
+                          # --- END FIX ---
+
+                         # ✅ Preload arguments เดิมของ step ลงใน temp state ก่อน rerun
+                        current_args = step.get('args', {})
+                        st.session_state[temp_args_key] = current_args.copy() if current_args else {}
+
+                        # ✅ ไม่ต้องลบ prev_kw หรือ temp_args ออก — ให้คงไว้จนกว่าจะ save หรือ cancel
+
+                        st.rerun()
+            
+            with action_cols[3]:
+                if st.button("📋", key=f"copy_{real_section_key}_{step['id']}", help="Duplicate", use_container_width=True):
+                    manager_module.duplicate_step(real_section_key, step['id'])
+                    st.rerun()
+            
+            with action_cols[4]:
+                if st.button("🗑️", key=f"del_{real_section_key}_{step['id']}", help="Delete", use_container_width=True):
+                    manager_module.delete_step(real_section_key, step['id'])
+                    st.rerun()
+            
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # === CARD BODY (Conditional Rendering) ===
+    if not edit_mode:
+        # --- Display Mode: Show simple caption ---
+        valid_args = {k: v for k, v in step.get('args', {}).items() if (v or v is False)}
+        if valid_args:
+            args_str = format_args_as_string(valid_args)
+            if args_str:
+                st.markdown(
+                f"<div style='padding: 0.1rem 1rem 0.6rem 1rem; color: #56d364; "
+                f"font-size: 0.8rem; font-family: \"SF Mono\", Monaco, monospace; "
+                f"line-height: 1.4; margin-top: -0.2rem; word-wrap: break-word; "
+                f"white-space: normal; overflow-wrap: break-word;'>{args_str}</div>",
+                unsafe_allow_html=True
+            )
+        
+        # --- Display CSV/API Config ---
+        if step.get('type') == 'csv_import' and step.get('config'):
+            cfg = step['config']
+            st.caption(
+                f"🗃️ **Data Source:** {cfg.get('ds_name', '?')} "
+                f"→ Variable: `{cfg.get('ds_var', '?')}` "
+                f"→ Column: `{cfg.get('col_var', '?')}`"
+            )
+            
+            if cfg.get('headers'):
+                headers_display = ', '.join(cfg['headers'][:5])
+                if len(cfg['headers']) > 5:
+                    headers_display += "..."
+                st.caption(f"📊 **Columns:** {headers_display}")
+        
+        elif step.get('type') == 'api_call':
+            st.caption(f"🌐 **API Service Call**")
+
+    else:
+        # --- Edit Mode: Show inputs ---
+        st.markdown("<div class='crud-edit-section'>", unsafe_allow_html=True)
+
+        if 'categorized_keywords' not in ws_state:
+            all_keywords_list = ws_state.get('keywords', [])
+            if all_keywords_list:
+                ws_state['categorized_keywords'] = categorize_keywords(all_keywords_list)
+
+        categorized_keywords = ws_state.get('categorized_keywords', {})
+        all_kws = [kw for kws in categorized_keywords.values() for kw in kws]
+        all_kw_names = [kw['name'] for kw in all_kws]
+
+        st.markdown("##### 🔧 Edit Step")
+
+        # --- Keyword Selector ---
+        current_kw_name = step.get('keyword', '')
+        edit_kw_state_key = f"edit_kw_select_{step['id']}"
+        if edit_kw_state_key not in st.session_state:
+            st.session_state[edit_kw_state_key] = current_kw_name
+
+        selected_kw_name = st.selectbox(
+            "Select Keyword",
+            all_kw_names,
+            index=all_kw_names.index(st.session_state[edit_kw_state_key]) if st.session_state[edit_kw_state_key] in all_kw_names else 0,
+            key=edit_kw_state_key
+        )
+        selected_kw = next((kw for kw in all_kws if kw['name'] == selected_kw_name), None)
+
+        # === ✅ เพิ่ม CSV Quick Insert ตรงนี้ ===
+        if selected_kw and selected_kw.get('args'):
+            with st.expander("📊 Quick Insert from CSV Data", expanded=False):
+                st.caption("Select value and target argument to insert")
+                
+                csv_keywords = extract_csv_datasource_keywords(ws_state)
+                
+                if csv_keywords:
+                    col_ds, col_row, col_column, col_target = st.columns([2, 1.5, 1.5, 2])
+                    
+                    with col_ds:
+                        quick_ds = st.selectbox(
+                            "Data Source",
+                            options=list(csv_keywords.keys()),
+                            key=f"quick_csv_ds_edit_{step['id']}"
+                        )
+                    
+                    quick_row_val = ""
+                    with col_row:
+                        quick_row_val = st.text_input(
+                            "Row Key",
+                            key=f"quick_csv_row_edit_{step['id']}",
+                            placeholder="e.g., robotapi"
+                        )
+                    
+                    quick_col = None
+                    headers = []
+                    if quick_ds:
+                        ds_info = csv_keywords.get(quick_ds, {})
+                        headers = ds_info.get('headers', [])
+                        
+                        if headers:
+                            with col_column:
+                                if len(headers) > 1:
+                                    quick_col = st.selectbox(
+                                        "Column",
+                                        options=headers[1:], 
+                                        key=f"quick_csv_col_edit_{step['id']}"
+                                    )
+                    
+                    target_arg = None
+                    with col_target:
+                        text_args = []
+                        for arg_item in selected_kw.get('args', []):
+                            arg_name = arg_item.get('name', '').strip('${}')
+                            is_locator = any(s in arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'menu'])
+                            is_preset = arg_name in ARGUMENT_PRESETS
+                            if not is_locator and not is_preset:
+                                text_args.append(arg_name)
+                        
+                        if text_args:
+                            target_arg = st.selectbox(
+                                "Insert to →",
+                                options=text_args,
+                                key=f"quick_csv_target_edit_{step['id']}"
+                            )
+                        else:
+                            st.caption("_No text args_")
+                    
+                    # ✅ แสดงปุ่ม Insert
+                    if quick_ds and target_arg:
+                        ds_info = csv_keywords.get(quick_ds, {})
+                        ds_var = ds_info.get('ds_var', 'DATA')
+                        col_var = ds_info.get('col_var', 'COL')
+                        
+                        insert_syntax = ""
+                        if quick_row_val:
+                            if len(headers) > 1 and quick_col:
+                                insert_syntax = f"${{{ds_var}['{quick_row_val}'][${{{col_var}.{quick_col}}}]}}"
+                            else:
+                                insert_syntax = f"${{{ds_var}['{quick_row_val}']}}"
+                        
+                        if st.button("✅ Insert", type="primary", use_container_width=True, 
+                                    key=f"quick_csv_insert_btn_edit_{step['id']}"):
+                            if not target_arg:
+                                st.warning("Please select a target argument 'Insert to →'")
+                            elif not quick_row_val:
+                                st.warning("Please enter a 'Row Key'")
+                            elif insert_syntax:
+                                temp_args_key = f"edit_temp_args_{step['id']}"
+                                if temp_args_key not in st.session_state:
+                                    st.session_state[temp_args_key] = {}
+                                
+                                # ✅ อัปเดต temp_args_key
+                                st.session_state[temp_args_key][target_arg] = insert_syntax
+                                
+                                # ✅ อัปเดต widget keys ทั้งหมดที่เป็นไปได้
+                                base_key = f"crud_edit_{step['id']}_{target_arg}"
+                                st.session_state[base_key] = insert_syntax
+                                st.session_state[f"{base_key}_default_text"] = insert_syntax
+                                
+                                st.toast(f"✅ Inserted '{insert_syntax}' into '{target_arg}'", icon="✅")
+                                st.rerun()
+                else:
+                    st.info("No CSV data sources found. Add them in Test Data tab.")
+            
+            st.markdown("---")
+
+        # --- Argument Inputs (SIMPLIFIED LOGIC) ---
+        temp_args_key = f"edit_temp_args_{step['id']}"
+
+        # Initialize temp args ONCE when entering edit mode
+        if temp_args_key not in st.session_state or not st.session_state[temp_args_key]:
+            st.session_state[temp_args_key] = {}
+            if selected_kw and selected_kw.get('args'):
+                current_step_args = step.get('args', {})
+                for arg_item in selected_kw.get('args', []):
+                    clean_arg_name = arg_item.get('name', '').replace('${', '').replace('}', '')
+                    arg_info = arg_item.get('info', {})
+                    initial_value = current_step_args.get(clean_arg_name, arg_info.get('default', ''))
+                    # ✅ ตั้งค่าเริ่มต้นเฉพาะครั้งแรกเท่านั้น
+                    st.session_state[temp_args_key][clean_arg_name] = initial_value
+
+        # Check if keyword changed
+        if st.session_state.get(edit_kw_state_key) != st.session_state.get(f"prev_kw_{step['id']}", ""):
+            # Reset temp args when keyword changes
+            st.session_state[temp_args_key] = {}
+            if selected_kw and selected_kw.get('args'):
+                for arg_item in selected_kw.get('args', []):
+                    arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
+                    clean_arg_name = arg_info.get('name', '').strip('${}')
+                    if not clean_arg_name: 
+                        continue
+                    st.session_state[temp_args_key][clean_arg_name] = arg_info.get('default', '')
+            st.session_state[f"prev_kw_{step['id']}"] = selected_kw_name
+
+        # Render argument inputs
+        if selected_kw and selected_kw.get('args'):
+            st.markdown("**Arguments:**")
+            
+            for arg_item in selected_kw.get('args', []):
+                arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
+                clean_arg_name = arg_info.get('name', '').strip('${}')
+                if not clean_arg_name: 
+                    continue
+                arg_info['name'] = clean_arg_name
+
+                # ✅ อ่านค่าจาก temp_args_key
+                current_value = st.session_state[temp_args_key].get(clean_arg_name, arg_info.get('default', ''))
+                
+                # ✅ สร้าง unique key
+                input_key = f"crud_edit_{step['id']}_{clean_arg_name}"
+                
+                # ✅ Render input และเก็บค่ากลับเข้า temp_args_key
+                rendered_value = render_argument_input(
+                    arg_info,
+                    ws_state,
+                    input_key,
+                    current_value=current_value
+                )
+                
+                # Determine the actual key used by render_argument_input
+                is_locator_arg = any(s in clean_arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'menu', 'header', 'body', 'theader', 'tbody'])
+                
+                final_value = None
+                if is_locator_arg:
+                    final_value = st.session_state.get(f"{input_key}_locator_select", current_value)
+                elif clean_arg_name in ARGUMENT_PRESETS:
+                    config = ARGUMENT_PRESETS[clean_arg_name]
+                    input_type = config.get('type')
+                    if input_type == "select_or_input":
+                        selected = st.session_state.get(f"{input_key}_select")
+                        if selected == "📝 Other (custom)":
+                            final_value = st.session_state.get(f"{input_key}_custom", current_value)
+                        else:
+                            final_value = selected if selected else current_value
+                    else:
+                        final_value = st.session_state.get(input_key, current_value)
+                else:
+                    # Check patterns
+                    matched_pattern = False
+                    arg_lower = clean_arg_name.lower()
+                    for pattern_key in ARGUMENT_PATTERNS.keys():
+                        if pattern_key in arg_lower:
+                            final_value = st.session_state.get(input_key, current_value)
+                            matched_pattern = True
+                            break
+                    
+                    # Default Text Input
+                    if not matched_pattern:
+                        final_value = st.session_state.get(f"{input_key}_default_text", current_value)
+                
+                # Update temp_args_key
+                st.session_state[temp_args_key][clean_arg_name] = final_value if final_value is not None else current_value
+
+        elif not selected_kw:
+            st.warning("Selected keyword definition not found.")
+
+        # --- Save/Cancel Buttons (FIXED LOGIC) ---
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✅ Save Changes", key=f"save_edit_{step['id']}", use_container_width=True, type="primary"):
+                # ✅ ใช้ค่าจาก temp_args_key โดยตรง
+                updated_data = {
+                    "keyword": selected_kw_name,
+                    "args": st.session_state.get(temp_args_key, {}).copy()
+                }
+
+                if 'type' in step: 
+                    updated_data['type'] = step['type']
+                if 'config' in step: 
+                    updated_data['config'] = step['config']
+
+                manager.update_step(real_section_key, step['id'], updated_data)
+                
+                # Cleanup states
+                st.session_state[edit_mode_key] = False
+                if edit_kw_state_key in st.session_state: 
+                    del st.session_state[edit_kw_state_key]
+                if temp_args_key in st.session_state: 
+                    del st.session_state[temp_args_key]
+                if f"prev_kw_{step['id']}" in st.session_state: 
+                    del st.session_state[f"prev_kw_{step['id']}"]
+                
+                 # ✅ Cleanup CSV Quick Insert keys
+                csv_keys = [
+                    f"quick_csv_ds_edit_{step['id']}",
+                    f"quick_csv_row_edit_{step['id']}",
+                    f"quick_csv_col_edit_{step['id']}",
+                    f"quick_csv_target_edit_{step['id']}",
+                ]
+                for key in csv_keys:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                
+                # ✅ Cleanup Widget Keys
+                if selected_kw and selected_kw.get('args'):
+                    for arg_item in selected_kw.get('args', []):
+                        clean_arg_name = arg_item.get('name', '').strip('${}')
+                        if clean_arg_name:
+                            widget_key = f"crud_edit_{step['id']}_{clean_arg_name}"
+                            if widget_key in st.session_state:
+                                del st.session_state[widget_key]
+
+                st.rerun()
+        
+        with col2:
+            if st.button("❌ Cancel", key=f"cancel_edit_{step['id']}", use_container_width=True):
+                st.session_state[edit_mode_key] = False
+                if edit_kw_state_key in st.session_state: 
+                    del st.session_state[edit_kw_state_key]
+                if temp_args_key in st.session_state: 
+                    del st.session_state[temp_args_key]
+                if f"prev_kw_{step['id']}" in st.session_state: 
+                    del st.session_state[f"prev_kw_{step['id']}"]
+                
+                # ✅ Cleanup CSV Quick Insert keys
+                csv_keys = [
+                    f"quick_csv_ds_edit_{step['id']}",
+                    f"quick_csv_row_edit_{step['id']}",
+                    f"quick_csv_col_edit_{step['id']}",
+                    f"quick_csv_target_edit_{step['id']}",
+                ]
+                for key in csv_keys:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                
+                # ✅ Cleanup Widget Keys
+                if selected_kw and selected_kw.get('args'):
+                    for arg_item in selected_kw.get('args', []):
+                        clean_arg_name = arg_item.get('name', '').strip('${}')
+                        if clean_arg_name:
+                            widget_key = f"crud_edit_{step['id']}_{clean_arg_name}"
+                            if widget_key in st.session_state:
+                                del st.session_state[widget_key]
+                st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def extract_csv_datasource_keywords(ws_state):
+    """
+    Extracts CSV Data Source information from workspace state.
+    Returns dict: {ds_name: {col_var, ds_var, csv_path, headers}}
+    """
+    result = {}
+    
+    # Get data sources from workspace
+    data_sources = ws_state.get('data_sources', [])
+    project_path = st.session_state.get('project_path', '')
+
+    for ds in data_sources:
+        ds_name_raw = ds.get('name', '')
+        csv_filename = ds.get('file_name', '')
+        col_var = ds.get('col_name', '')
+        
+        if not ds_name_raw or not csv_filename:
+            continue
+        
+        # Generate variable names
+        # e.g., "LOGIN" -> "DS_LOGIN"
+        ds_var_name = f"{ds_name_raw.upper().replace(' ', '_')}"
+        
+        # Get CSV headers
+        headers = util_get_csv_headers(project_path, csv_filename)
+        
+        # Use ds_name_raw for both key and col_var generation
+        result[ds_name_raw.upper()] = {  # ← แก้ตรงนี้
+            'col_var': col_var if col_var else f"{ds_name_raw.lower().replace(' ', '_')}",  # ← แก้ตรงนี้ด้วย
+            'ds_var': ds_var_name,
+            'csv_filename': csv_filename,
+            'headers': headers if headers else []
+        }
+    
+    return result

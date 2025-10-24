@@ -5,24 +5,43 @@ Handles all session state initialization and helper functions
 
 import streamlit as st
 import os
-from .file_manager import parse_robot_keywords,scan_robot_project
+from .file_manager import scan_robot_project, read_robot_variables_from_content
 from pathlib import Path
+from .utils import parse_robot_keywords
 
 def _load_default_keywords():
     """Loads and parses the default commonkeywords.resource file."""
+    
+    # Define menu locators to exclude from the main list
+    MENU_LOCATOR_NAMES = ['homemenu', 'mainmenu', 'submenu', 'menuname']
+    
+    # Define block markers
+    START_MARKER = "### All Menu Locator ###"
+    END_MARKER = "### All Menu Locator (END) ###"
+
     try:
         default_file_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'commonkeywords')
         
         with open(default_file_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        return parse_robot_keywords(content), "Default Keywords"
+        keywords = parse_robot_keywords(content)
+        all_variables = read_robot_variables_from_content(content)
+        
+        # Filter out menu locators from common variables
+        common_variables = [
+            v for v in all_variables 
+            if v.get('name') not in MENU_LOCATOR_NAMES
+        ]
+                
+        return keywords, common_variables, "Default Keywords"
+
     except FileNotFoundError:
         st.warning("Default keywords file not found. Please upload one manually.")
-        return [], None
+        return [], [], "", None
     except Exception as e:
         st.error(f"Error loading default keywords: {e}")
-        return [], None
+        return [], [], "", None
 
 def init_session_state():
     """Initialize all session state variables"""
@@ -92,6 +111,8 @@ def init_session_state():
         st.session_state.studio_workspace = {
             'view': 'Resources',  # หน้าจอเริ่มต้นที่จะแสดง 'Resources' หรือ 'Timeline'
             'keywords': [],      # สำหรับเก็บ Keywords ที่ import เข้ามา
+            'common_variables': [],
+            'common_keyword_path': None,
             'locators': [],      # สำหรับเก็บ Locators ทั้งหมด
             'html_pages': [{'name': 'Page 1', 'html': ''}],
             'timeline': [],      # สำหรับเก็บ Steps ทั้งหมดใน Timeline
@@ -122,9 +143,18 @@ def init_session_state():
 
         # 🎯 3. เรียกใช้ฟังก์ชันโหลดไฟล์ดีฟอลต์
         # ทำให้เมื่อเปิดแอปครั้งแรก จะมี keywords พร้อมใช้งานทันที
-        keywords, path_name = _load_default_keywords()
+        keywords, common_vars, path_name = _load_default_keywords()
         st.session_state.studio_workspace['keywords'] = keywords
-        st.session_state.studio_workspace['common_keyword_path'] = path_name       
+        st.session_state.studio_workspace['common_variables'] = common_vars
+        st.session_state.studio_workspace['common_keyword_path'] = path_name
+
+        # ===== START: ADDED FOR KEYWORD FACTORY =====
+        if 'keyword_factory_workspace' not in st.session_state:
+            st.session_state.keyword_factory_workspace = {
+                'active_keyword_id': None,
+                'keywords': [] 
+            }
+        # ===== END: ADDED FOR KEYWORD FACTORY =====
 
 # 🎯 START: เพิ่มฟังก์ชันใหม่นี้เข้าไปทั้งหมด
 def get_clean_locator_name(raw_name):

@@ -7,6 +7,7 @@ from ..session_manager import get_clean_locator_name
 import os
 import csv
 import pandas as pd
+from ..utils import util_get_csv_headers
 
 # ===================================================================
 # ===== 1. LOGIC สำหรับจัดการ WORKSPACE STATE =====
@@ -42,50 +43,18 @@ def _get_assets():
         st.session_state.studio_workspace = {}
     return st.session_state.studio_workspace.get('keywords', []), st.session_state.studio_workspace.get('locators', [])
 
-
 def get_csv_headers(csv_filename):
     """
-    Reads the headers (first row) from a CSV file in the datatest folder.
-    
-    Args:
-        csv_filename (str): Name of the CSV file (e.g., 'login_data.csv')
-    
-    Returns:
-        list: List of column headers, or empty list if file not found/error
+    (Refactored) Reads headers by calling the pure utility function
+    from utils.py, after getting project_path from session_state.
     """
-    import os
-    import csv
-    
-    # Get project path from session state
-    if 'project_path' not in st.session_state or not st.session_state.project_path:
+    # 1. ดึง project_path จาก session_state
+    project_path = st.session_state.get('project_path', '')
+    if not project_path:
         return []
     
-    project_path = st.session_state.project_path
-    
-    # Construct full path to CSV file
-    csv_path = os.path.join(
-        project_path,
-        'resources',
-        'datatest',
-        csv_filename
-    )
-    
-    # Check if file exists
-    if not os.path.exists(csv_path):
-        return []
-    
-    try:
-        # Read first row (headers)
-        with open(csv_path, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            headers = next(reader, [])  # Get first row
-            # Strip whitespace from headers
-            headers = [h.strip() for h in headers]
-            return headers
-    except Exception as e:
-        # Log error if needed
-        print(f"Error reading CSV headers from {csv_filename}: {e}")
-        return []
+    # 2. เรียกใช้ฟังก์ชัน Logic กลางจาก utils.py
+    return util_get_csv_headers(project_path, csv_filename)
 
 def _find_step_index(steps_list, step_id):
     return next((i for i, step in enumerate(steps_list) if step.get('id') == step_id), -1)
