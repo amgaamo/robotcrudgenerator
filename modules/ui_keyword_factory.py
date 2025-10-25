@@ -15,7 +15,8 @@ from .dialog_commonkw import render_add_step_dialog_base
 from .file_manager import append_robot_content_intelligently, create_new_robot_file, scan_robot_project # Added scan_robot_project
 from .test_flow_manager import categorize_keywords
 from datetime import datetime
-from .utils import scan_steps_for_variables, generate_arg_name_from_locator, format_args_as_string # Added format_args_as_string
+from .utils import scan_steps_for_variables, generate_arg_name_from_locator, format_args_as_string, format_args_as_multiline_string  # Added format_args_as_string
+from .utils import FILL_FORM_DEFAULTS, VERIFY_FORM_DEFAULTS
 
 # ======= ENTRY POINT FUNCTION =======
 def render_keyword_factory_tab():
@@ -502,18 +503,24 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
     # === CARD BODY (Conditional Rendering) ===
     if not edit_mode:
         # --- Display Mode ---
-        valid_args = {k: v for k, v in step.get('args', {}).items() if (v or v is False)}
-        if valid_args:
-            # Use format_args_as_string from utils
-            args_str = format_args_as_string(valid_args)
-            if args_str:
-                st.markdown(
-                f"<div style='padding: 0.1rem 1rem 0.6rem 1rem; color: #56d364; " # Keep color green for args
-                f"font-size: 0.8rem; font-family: \"SF Mono\", Monaco, monospace; "
-                f"line-height: 1.4; margin-top: -0.2rem; word-wrap: break-word; "
-                f"white-space: normal; overflow-wrap: break-word;'>{args_str}</div>",
-                unsafe_allow_html=True
-            )
+        all_args = step.get('args', {})
+
+        if all_args:
+            # --- Call the NEW grid formatter ---
+            args_grid_html = format_args_as_multiline_string(all_args)
+
+            if args_grid_html:
+                 # --- [NEW] Simplified container div, styling is now IN the grid_html ---
+                 st.markdown(
+                     f"""<div style='
+                             padding: 0.5rem 0.5rem 0.6rem 0.5rem; /* Reduced padding */
+                             margin-top: 0.3rem;
+                             border-top: 1px solid rgba(110, 118, 129, 0.2);
+                         '>
+                         {args_grid_html}
+                         </div>""",
+                     unsafe_allow_html=True
+                 )
 
         # Display CSV/API Config
         if step.get('type') == 'csv_import' and step.get('config'):
@@ -635,7 +642,7 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
                 # --- Argument Suggestion Logic ---
                 show_suggestion = False
                 suggested_arg_name = None
-                if clean_arg_name in ['value', 'expected_value', 'text']:
+                if clean_arg_name in ['value', 'exp_value', 'text']:
                      # Determine correct widget key based on input type
                      widget_key_base = input_key
                      widget_key = widget_key_base # Default for simple inputs
@@ -1000,103 +1007,438 @@ def render_kw_factory_api_csv_step_dialog():
                 kw_manager.add_step(keyword_id, new_step)
                 close_dialog()
 
-
 # ======= DIALOG: Quick Fill Form =======
-@st.dialog("Quick Template: Fill Form", width="large", dismissible=False) # <-- เพิ่ม dismissible=False
+@st.dialog("Quick Template: Fill Form", width="large", dismissible=False)
 def render_kw_factory_fill_form_dialog():
     """
-    Lets user select multiple locators to generate 'Fill in data form' steps.
+    [MODIFIED] Lets user select multiple locators and edit arguments in a table view
+    to generate 'Fill in data form' steps.
     """
     ws_state = st.session_state.studio_workspace
     context = st.session_state.get('kw_factory_add_dialog_context', {})
     keyword_id = context.get("key") # This is the keyword_id
-    
-    # --- [START] เพิ่มปุ่ม Back ---
-    if st.button("← Back to Editor", key="back_fill_form_dialog"):
+
+    # --- Session State Keys ---
+    locators_state_key = f"kw_factory_fill_locators_{keyword_id}"
+    custom_args_state_key = f"kw_factory_fill_custom_args_{keyword_id}"
+
+    # Initialize state if not present
+    if locators_state_key not in st.session_state:
+        st.session_state[locators_state_key] = []
+    if custom_args_state_key not in st.session_state:
+        st.session_state[custom_args_state_key] = {} # Dict: {loc_name: {arg: value}}
+
+    # Import defaults (assuming it's in utils.py now)
+    try:
+        from .utils import FILL_FORM_DEFAULTS
+    except ImportError:
+        st.error("Error: FILL_FORM_DEFAULTS not found in utils.py!")
+        # Define fallback defaults here if needed
+        FILL_FORM_DEFAULTS = { 'is_switch_type': False, 'is_checkbox_type': False, 'select_attribute': 'label', 'is_ant_design': False }
+
+    # --- Cleanup Function ---
+    def cleanup_and_close():
+        keys_to_delete = [locators_state_key, custom_args_state_key]
+        # Also delete individual widget keys if necessary (though rerun might handle it)
+        selected_locs = st.session_state.get(locators_state_key, [])
+        for loc_name in selected_locs:
+            loc_key_prefix = f"fill_arg_{keyword_id}_{loc_name.replace('LOCATOR_', '')}"
+            keys_to_delete.extend([f"{loc_key_prefix}_switch", f"{loc_key_prefix}_check", f"{loc_key_prefix}_attr", f"{loc_key_prefix}_ant"])
+
+        for key in keys_to_delete:
+            if key in st.session_state:
+                try: del st.session_state[key]
+                except KeyError: pass
         st.session_state.show_kw_factory_fill_form_dialog = False
         st.rerun()
-    # --- [END] เพิ่มปุ่ม Back ---
-    
+
+    # --- Back Button ---
+    if st.button("← Back to Editor", key="back_fill_form_dialog"):
+        cleanup_and_close()
+
     if not keyword_id:
         st.error("Error: Keyword context not found.")
         st.session_state.show_kw_factory_fill_form_dialog = False
         st.rerun()
         return
 
-    st.markdown("#### ✏️ Select Fields to Fill")
-    st.caption("Select all locators you want to fill. Arguments like `${username}` will be automatically created based on the locator name and added to the keyword.")
+    st.markdown("#### ✏️ Select Fields and Configure Fill Steps")
+    st.caption("Select locators, then customize arguments for each generated step in the table below.")
 
     all_locators = ws_state.get('locators', [])
     if not all_locators:
         st.warning("No locators found in 'Assets' tab. Please add locators first.")
-        return
+        # Render cancel button even if no locators
+        st.markdown("---")
+        if st.button("❌ Cancel", use_container_width=True):
+            cleanup_and_close()
+        return # Stop rendering the rest
 
-    selected_locators = st.multiselect(
+    # --- Locator Multiselect ---
+    available_locator_names = [loc['name'] for loc in all_locators]
+    # Read current selection from state BEFORE rendering multiselect
+    current_selection_in_state = st.session_state.get(locators_state_key, [])
+
+    selected_locators_names_widget = st.multiselect(
         "Select Locators",
-        options=[loc['name'] for loc in all_locators],
-        format_func=get_clean_locator_name
+        options=available_locator_names,
+        default=current_selection_in_state,
+        format_func=get_clean_locator_name,
+        key=f"multiselect_{locators_state_key}" # Unique key for the widget
     )
-    
-    st.markdown("---")
-    
-    if st.button("✅ Add Fill Steps", type="primary", use_container_width=True):
-        if selected_locators:
-            kw_manager.add_quick_fill_form_steps(keyword_id, selected_locators)
-            st.session_state.show_kw_factory_fill_form_dialog = False
-            st.rerun()
-        else:
-            st.warning("Please select at least one locator.")
-            
-    if st.button("❌ Cancel", use_container_width=True):
-        st.session_state.show_kw_factory_fill_form_dialog = False
-        st.rerun()
 
-# ======= DIALOG: Quick Verify Detail =======
-@st.dialog("Quick Template: Verify Detail", width="large", dismissible=False) # <-- เพิ่ม dismissible=False
+    # Check if the multiselect value differs from the state, then update state and rerun
+    if selected_locators_names_widget != current_selection_in_state:
+        st.session_state[locators_state_key] = selected_locators_names_widget
+        # Clean up custom args state for locators that were unselected
+        current_custom_args = st.session_state.get(custom_args_state_key, {})
+        new_custom_args = {loc: args for loc, args in current_custom_args.items() if loc in selected_locators_names_widget}
+        st.session_state[custom_args_state_key] = new_custom_args
+        st.rerun() # Rerun immediately after selection change
+
+    # Use the selection from the state for the rest of the logic
+    selected_locators_names = st.session_state.get(locators_state_key, [])
+
+    st.markdown("---")
+
+    # --- [NEW] Argument Customization Table ---
+    if selected_locators_names:
+        st.markdown("**Customize Step Arguments:**")
+
+        # --- Header Row ---
+        header_cols = st.columns([3, 1, 1.3, 1, 1, 2]) # Adjust ratios
+        with header_cols[0]: st.caption("**Locator**")
+        with header_cols[1]: st.caption("**Ant?**")     # Moved Ant Design here
+        with header_cols[2]: st.caption("**Sel attr.**") # Renamed for brevity
+        with header_cols[3]: st.caption("**Checkbox?**")
+        with header_cols[4]: st.caption("**Switch?**")
+        with header_cols[5]: st.caption("**Locator Switch Checked?**") # Added new column
+        st.divider()
+
+        # --- Data Rows ---
+        current_custom_args = st.session_state.get(custom_args_state_key, {})
+        # Create a temporary dict to store widget values during rendering
+        widget_values_temp = {}
+
+        for loc_name in selected_locators_names:
+            # Initialize custom args for this locator if needed (same as before)
+            if loc_name not in current_custom_args:
+                current_custom_args[loc_name] = FILL_FORM_DEFAULTS.copy()
+
+            loc_args = current_custom_args[loc_name] # Get current settings
+            loc_key_prefix = f"fill_arg_{keyword_id}_{loc_name.replace('LOCATOR_', '')}" # Unique prefix
+
+            # New column order: Locator, Sel attr., Checkbox?, Ant?, Switch?, Switch Checked?
+            row_cols = st.columns([3, 1, 1.3, 1, 1, 2]) # Use new ratios
+
+            with row_cols[0]: # Locator
+                st.markdown(f"`{get_clean_locator_name(loc_name)}`")
+
+            with row_cols[2]: # Select Attribute
+                attr_options = ["label", "value", "text", "index"]
+                current_attr = loc_args.get('select_attribute', FILL_FORM_DEFAULTS['select_attribute'])
+                try:
+                    attr_index = attr_options.index(current_attr)
+                except ValueError:
+                    attr_index = 0 # Default if value invalid
+
+                selected_attr = st.selectbox(" ", # Label in header
+                                options=attr_options,
+                                index=attr_index,
+                                key=f"{loc_key_prefix}_attr",
+                                label_visibility="collapsed")
+                widget_values_temp.setdefault(loc_name, {})['select_attribute'] = selected_attr
+
+            with row_cols[3]: # Checkbox?
+                is_check = st.checkbox(" ",
+                            value=loc_args.get('is_checkbox_type', FILL_FORM_DEFAULTS['is_checkbox_type']),
+                            key=f"{loc_key_prefix}_check",
+                            label_visibility="collapsed")
+                widget_values_temp.setdefault(loc_name, {})['is_checkbox_type'] = is_check
+
+            with row_cols[1]: # Ant Design?
+                is_ant = st.checkbox(" ",
+                           value=loc_args.get('is_ant_design', FILL_FORM_DEFAULTS['is_ant_design']),
+                           key=f"{loc_key_prefix}_ant",
+                           label_visibility="collapsed")
+                widget_values_temp.setdefault(loc_name, {})['is_ant_design'] = is_ant
+
+            with row_cols[4]: # Switch?
+                is_switch = st.checkbox(" ",
+                             value=loc_args.get('is_switch_type', FILL_FORM_DEFAULTS['is_switch_type']),
+                             key=f"{loc_key_prefix}_switch",
+                             label_visibility="collapsed")
+                widget_values_temp.setdefault(loc_name, {})['is_switch_type'] = is_switch
+
+            with row_cols[5]: # Locator Switch Checked? (Changed to Text Input)
+                current_lsc_value = loc_args.get(
+                    'locator_switch_checked',
+                    FILL_FORM_DEFAULTS.get('locator_switch_checked', '${EMPTY}') # Get default from constants
+                )
+                # Ensure the default displayed is exactly '${EMPTY}' if that's the current value
+                display_value = '${EMPTY}' if current_lsc_value == '${EMPTY}' else current_lsc_value
+
+                switch_checked_input = st.text_input(" ", # Label in header
+                                     value=display_value,
+                                     key=f"{loc_key_prefix}_switch_checked_text", # New key
+                                     placeholder="${EMPTY}, ${True}, ...",
+                                     label_visibility="collapsed")
+                # Store the raw text input value
+                widget_values_temp.setdefault(loc_name, {})['locator_switch_checked'] = switch_checked_input
+
+        # --- Update Session State AFTER rendering all widgets ---
+        # Compare temporary values with current state to see if an update is needed
+        if widget_values_temp != current_custom_args:
+             st.session_state[custom_args_state_key] = widget_values_temp
+             # Optional: Rerun if you want changes reflected immediately (might feel slow)
+             # st.rerun()
+
+        st.markdown("---")
+
+    # --- Add/Cancel Buttons ---
+    col_add, col_cancel = st.columns(2)
+    with col_add:
+        # Disable button if no locators are selected
+        add_disabled = not selected_locators_names
+        if st.button("✅ Add Fill Steps", type="primary", use_container_width=True, disabled=add_disabled):
+            # Read the final custom args directly from session state
+            custom_args_for_selected = st.session_state.get(custom_args_state_key, {})
+
+            # Prepare data for the manager function
+            locators_with_custom_args = {
+                loc_name: custom_args_for_selected.get(loc_name, FILL_FORM_DEFAULTS.copy())
+                for loc_name in selected_locators_names # Use state variable here
+            }
+
+            # Call the manager function
+            kw_manager.add_quick_fill_form_steps_with_custom_args(keyword_id, locators_with_custom_args)
+
+            # Cleanup state and close dialog
+            cleanup_and_close()
+
+    with col_cancel:
+        if st.button("❌ Cancel", use_container_width=True):
+            cleanup_and_close()
+
+@st.dialog("Quick Template: Verify Detail", width="large", dismissible=False)
 def render_kw_factory_verify_detail_dialog():
     """
-    Lets user select multiple locators to generate 'Verify data form' steps.
+    [MODIFIED] Lets user select multiple locators and edit arguments in a table view
+    to generate 'Verify data form' steps.
     """
     ws_state = st.session_state.studio_workspace
-    context = st.session_state.get('kw_factory_add_dialog_context', {})
+    context = st.session_state.get('kw_factory_add_dialog_context', {}) # Re-use context key? Verify if this is correct
     keyword_id = context.get("key") # This is the keyword_id
-    
-    # --- [START] เพิ่มปุ่ม Back ---
-    if st.button("← Back to Editor", key="back_verify_dialog"):
+
+    # --- Session State Keys ---
+    locators_state_key = f"kw_factory_verify_locators_{keyword_id}"
+    custom_args_state_key = f"kw_factory_verify_custom_args_{keyword_id}"
+
+    # Initialize state if not present
+    if locators_state_key not in st.session_state:
+        st.session_state[locators_state_key] = []
+    if custom_args_state_key not in st.session_state:
+        st.session_state[custom_args_state_key] = {} # Dict: {loc_name: {arg: value}}
+
+    # --- Cleanup Function ---
+    def cleanup_and_close():
+        keys_to_delete = [locators_state_key, custom_args_state_key]
+        # Cleanup widget keys (optional but good practice)
+        selected_locs = st.session_state.get(locators_state_key, [])
+        for loc_name in selected_locs:
+            loc_key_prefix = f"verify_arg_{keyword_id}_{loc_name.replace('LOCATOR_', '')}"
+            keys_to_delete.extend([
+                f"{loc_key_prefix}_assert", f"{loc_key_prefix}_exp_val", f"{loc_key_prefix}_attr",
+                f"{loc_key_prefix}_ignore", f"{loc_key_prefix}_ant", f"{loc_key_prefix}_switch",
+                f"{loc_key_prefix}_sw_checked", f"{loc_key_prefix}_skip"
+            ])
+
+        for key in keys_to_delete:
+            if key in st.session_state:
+                try: del st.session_state[key]
+                except KeyError: pass
         st.session_state.show_kw_factory_verify_dialog = False
         st.rerun()
-    # --- [END] เพิ่มปุ่ม Back ---
-    
+
+    # --- Back Button ---
+    if st.button("← Back to Editor", key="back_verify_dialog"):
+        cleanup_and_close()
+
     if not keyword_id:
         st.error("Error: Keyword context not found.")
         st.session_state.show_kw_factory_verify_dialog = False
         st.rerun()
         return
 
-    st.markdown("#### 🔍 Select Fields to Verify")
-    st.caption("Select all locators you want to verify. Arguments will be automatically created and added to the keyword.")
+    st.markdown("#### 🔍 Select Fields and Configure Verify Steps")
+    st.caption("Select locators, then customize arguments for each generated step.")
 
     all_locators = ws_state.get('locators', [])
     if not all_locators:
         st.warning("No locators found in 'Assets' tab. Please add locators first.")
+        st.markdown("---")
+        if st.button("❌ Cancel", use_container_width=True):
+            cleanup_and_close()
         return
 
-    selected_locators = st.multiselect(
+    # --- Locator Multiselect ---
+    available_locator_names = [loc['name'] for loc in all_locators]
+    current_selection_in_state = st.session_state.get(locators_state_key, [])
+
+    selected_locators_names_widget = st.multiselect(
         "Select Locators",
-        options=[loc['name'] for loc in all_locators],
-        format_func=get_clean_locator_name
+        options=available_locator_names,
+        default=current_selection_in_state,
+        format_func=get_clean_locator_name,
+        key=f"multiselect_{locators_state_key}"
     )
-    
-    st.markdown("---")
-    
-    if st.button("✅ Add Verify Steps", type="primary", use_container_width=True):
-        if selected_locators:
-            kw_manager.add_quick_verify_steps(keyword_id, selected_locators)
-            st.session_state.show_kw_factory_verify_dialog = False
-            st.rerun()
-        else:
-            st.warning("Please select at least one locator.")
-            
-    if st.button("❌ Cancel", use_container_width=True):
-        st.session_state.show_kw_factory_verify_dialog = False
+
+    if selected_locators_names_widget != current_selection_in_state:
+        st.session_state[locators_state_key] = selected_locators_names_widget
+        current_custom_args = st.session_state.get(custom_args_state_key, {})
+        new_custom_args = {loc: args for loc, args in current_custom_args.items() if loc in selected_locators_names_widget}
+        st.session_state[custom_args_state_key] = new_custom_args
         st.rerun()
+
+    selected_locators_names = st.session_state.get(locators_state_key, [])
+
+    st.markdown("---")
+
+    # --- [NEW] Argument Customization Table ---
+    if selected_locators_names:
+        st.markdown("**Customize Step Arguments:**")
+
+        # --- Header Row ---
+        # Locator | Assertion | Exp. Value | Sel Attr | Ignore? | Ant? | Switch? | Sw Checked | Skip?
+        header_cols = st.columns([3.5, 2, 1.5, 1, 1, 1, 2, 1]) # Adjust ratios
+        with header_cols[0]: st.caption("**Locator**")
+        with header_cols[1]: st.caption("**Assertion**")
+        with header_cols[2]: st.caption("**Sel Attr.**")
+        with header_cols[3]: st.caption("**Ignore Case**")
+        with header_cols[4]: st.caption("**Ant?**")
+        with header_cols[5]: st.caption("**Switch?**")
+        with header_cols[6]: st.caption("**locator Switch Checked**") # Changed label slightly
+        st.divider()
+
+        # --- Data Rows ---
+        current_custom_args = st.session_state.get(custom_args_state_key, {})
+        widget_values_temp = {} # Temporary dict for widget values
+
+        # Define options for dropdowns
+        assertion_options = ["equal", "should be", "contains", "not contains", "inequal"]
+        attr_options = ["label", "value"]
+
+        for loc_name in selected_locators_names:
+            if loc_name not in current_custom_args:
+                current_custom_args[loc_name] = VERIFY_FORM_DEFAULTS.copy()
+                # Auto-generate expected value variable only when adding locator initially
+                from .utils import generate_arg_name_from_locator # Import here if needed
+                arg_var = generate_arg_name_from_locator(loc_name)
+                if not arg_var:
+                     clean_loc = loc_name.replace('LOCATOR_', '').lower()
+                     arg_var = f"${{{clean_loc or 'expected'}}}"
+                current_custom_args[loc_name]['exp_value'] = arg_var # Set default expected value
+
+            loc_args = current_custom_args[loc_name]
+            loc_key_prefix = f"verify_arg_{keyword_id}_{loc_name.replace('LOCATOR_', '')}"
+
+            row_cols = st.columns([3.5, 2, 1.5, 1, 1, 1, 2, 1]) # Use same ratios
+
+            with row_cols[0]: # Locator
+                st.markdown(f"`{get_clean_locator_name(loc_name)}`")
+
+            with row_cols[1]: # Assertion
+                current_assert = loc_args.get('assertion', 'equal') # <-- แก้ไขตรงนี้
+                try: assert_index = assertion_options.index(current_assert)
+                except ValueError: assert_index = 0 # Default to 'equal' index
+                selected_assert = st.selectbox(" ", options=assertion_options, index=assert_index, key=f"{loc_key_prefix}_assert", label_visibility="collapsed")
+                widget_values_temp.setdefault(loc_name, {})['assertion'] = selected_assert
+
+            with row_cols[2]: # Select Attribute
+                current_attr = loc_args.get('select_attribute', VERIFY_FORM_DEFAULTS['select_attribute'])
+                try: attr_index = attr_options.index(current_attr)
+                except ValueError: attr_index = 0
+                selected_attr = st.selectbox(" ", options=attr_options, index=attr_index, key=f"{loc_key_prefix}_attr", label_visibility="collapsed")
+                widget_values_temp.setdefault(loc_name, {})['select_attribute'] = selected_attr
+
+            with row_cols[3]: # Ignore Case?
+                is_ignore = st.checkbox(" ", value=loc_args.get('ignorcase', VERIFY_FORM_DEFAULTS['ignorcase']), key=f"{loc_key_prefix}_ignore", label_visibility="collapsed")
+                widget_values_temp.setdefault(loc_name, {})['ignorcase'] = is_ignore
+
+            with row_cols[4]: # Ant Design?
+                is_ant = st.checkbox(" ", value=loc_args.get('antdesign', VERIFY_FORM_DEFAULTS['antdesign']), key=f"{loc_key_prefix}_ant", label_visibility="collapsed")
+                widget_values_temp.setdefault(loc_name, {})['antdesign'] = is_ant
+
+            with row_cols[5]: # Is Switch Type?
+                is_switch = st.checkbox(" ", value=loc_args.get('is_switchtype', VERIFY_FORM_DEFAULTS['is_switchtype']), key=f"{loc_key_prefix}_switch", label_visibility="collapsed")
+                widget_values_temp.setdefault(loc_name, {})['is_switchtype'] = is_switch
+
+            with row_cols[6]: # Locator Switch Checked?
+                current_lsc_value = loc_args.get('locator_switch_checked', VERIFY_FORM_DEFAULTS['locator_switch_checked'])
+                display_value = '${EMPTY}' if current_lsc_value == '${EMPTY}' else current_lsc_value
+                sw_checked_input = st.text_input(" ", value=display_value, key=f"{loc_key_prefix}_sw_checked", placeholder="${EMPTY}, ${True}, ...", label_visibility="collapsed")
+                widget_values_temp.setdefault(loc_name, {})['locator_switch_checked'] = sw_checked_input
+
+        # --- Update Session State AFTER rendering ---
+        # Read the current full state from session state
+        state_needs_update = False
+        current_state_args = st.session_state.get(custom_args_state_key, {})
+
+        # Iterate through the temporary widget values we collected
+        for loc_name, new_widget_vals in widget_values_temp.items():
+            # Get the existing arguments for this locator from the current state
+            existing_loc_args = current_state_args.get(loc_name, {})
+
+            # Preserve the existing exp_value if it exists
+            preserved_exp_value = existing_loc_args.get('exp_value')
+
+            # Update the existing args with the new widget values
+            updated_loc_args = existing_loc_args.copy() # Start with existing
+            updated_loc_args.update(new_widget_vals)    # Overwrite with new widget values
+
+            # Put the preserved exp_value back if it existed and wasn't somehow in new_widget_vals
+            if preserved_exp_value is not None and 'exp_value' not in new_widget_vals:
+                updated_loc_args['exp_value'] = preserved_exp_value
+            # Or ensure exp_value from defaults is there if it was missing entirely
+            elif 'exp_value' not in updated_loc_args:
+                 # Re-generate if completely missing (shouldn't happen often here)
+                 from .utils import generate_arg_name_from_locator
+                 arg_var = generate_arg_name_from_locator(loc_name)
+                 if not arg_var:
+                      clean_loc = loc_name.replace('LOCATOR_', '').lower()
+                      arg_var = f"${{{clean_loc or 'expected'}}}"
+                 updated_loc_args['exp_value'] = arg_var
+
+
+            # Check if the updated args are different from the ones currently in state
+            if updated_loc_args != existing_loc_args:
+                current_state_args[loc_name] = updated_loc_args # Update the main dictionary
+                state_needs_update = True
+
+        # Write the potentially modified dictionary back to session state ONLY if changes occurred
+        if state_needs_update:
+            st.session_state[custom_args_state_key] = current_state_args
+            # st.rerun() # Optional: Rerun if you want immediate reflection of updates
+
+        st.markdown("---")
+
+    # --- Add/Cancel Buttons ---
+    col_add, col_cancel = st.columns(2)
+    with col_add:
+        add_disabled = not selected_locators_names
+        if st.button("✅ Add Verify Steps", type="primary", use_container_width=True, disabled=add_disabled):
+            custom_args_for_selected = st.session_state.get(custom_args_state_key, {})
+
+            locators_with_custom_args = {
+                loc_name: custom_args_for_selected.get(loc_name, VERIFY_FORM_DEFAULTS.copy())
+                for loc_name in selected_locators_names
+            }
+
+            # Call the NEW manager function
+            kw_manager.add_quick_verify_steps_with_custom_args(keyword_id, locators_with_custom_args)
+
+            cleanup_and_close()
+
+    with col_cancel:
+        if st.button("❌ Cancel", use_container_width=True):
+            cleanup_and_close()

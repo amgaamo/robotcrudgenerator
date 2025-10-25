@@ -7,7 +7,7 @@ import streamlit as st
 import uuid
 import re
 # Make sure utils functions are imported correctly
-from .utils import format_robot_step_line, convert_json_path_to_robot_accessor
+from .utils import format_robot_step_line, convert_json_path_to_robot_accessor, generate_arg_name_from_locator
 
 # --- Initialization and Basic Getters/Setters (No changes needed) ---
 def initialize_workspace():
@@ -114,6 +114,22 @@ def update_step(keyword_id, step_id, updated_data):
 
 # --- *** CORRECTED: Quick Steps Functions *** ---
 def add_quick_fill_form_steps(keyword_id, locators_to_add):
+    """
+    [DEPRECATED - Use add_quick_fill_form_steps_with_custom_args]
+    Adds 'Fill in data form' steps with default arguments.
+    Calls the new function with default arguments.
+    """
+    locators_with_defaults = {
+        loc_name: FILL_FORM_DEFAULTS.copy() for loc_name in locators_to_add
+    }
+    add_quick_fill_form_steps_with_custom_args(keyword_id, locators_with_defaults)
+
+# --- *** ฟังก์ชันใหม่ *** ---
+def add_quick_fill_form_steps_with_custom_args(keyword_id, locators_with_custom_args):
+    """
+    Adds 'Fill in data form' steps using provided locators and their specific
+    custom argument overrides. Also adds necessary arguments to the keyword.
+    """
     kw = get_keyword(keyword_id)
     if not kw:
         return
@@ -123,29 +139,28 @@ def add_quick_fill_form_steps(keyword_id, locators_to_add):
 
     current_arg_names = {arg['name'] for arg in kw['args']} # Set for quick lookup
 
-    for loc_name in locators_to_add:
+    for loc_name, custom_args in locators_with_custom_args.items():
         # Generate suggested variable name (without ${})
-        from .utils import generate_arg_name_from_locator # Import helper
         arg_var = generate_arg_name_from_locator(loc_name)
         if not arg_var: # Handle cases where generation fails
-             # Maybe default to a generic name?
              clean_loc = loc_name.replace('LOCATOR_', '').lower()
              arg_var = f"${{{clean_loc or 'value'}}}"
 
+        # Start building the args for this step
+        step_args = {
+            "locator_field": loc_name, # Pass locator name string
+            "value": arg_var           # Pass the generated variable string
+        }
+
+        # Merge the custom args provided
+        step_args.update(custom_args) # This adds/overwrites defaults
 
         new_step = {
             "id": str(uuid.uuid4()),
             "keyword": "Fill in data form", # Make sure this matches commonkeywords
-            "args": {
-                "locator_field": loc_name, # Pass locator name string
-                "value": arg_var,          # Pass the generated variable string
-                "is_switch_type": "false", # Use string "false" for consistency? Or keep boolean? Let's use boolean for now.
-                "is_checkbox_type": False,
-                "select_attribute": "label",
-                "is_ant_design": False
-                # Remove locator_switch_checked if not needed by default
-            }
+            "args": step_args # Use the merged arguments
         }
+
         if 'steps' not in kw: kw['steps'] = []
         kw['steps'].append(new_step)
 
@@ -159,6 +174,30 @@ def add_quick_fill_form_steps(keyword_id, locators_to_add):
 
 
 def add_quick_verify_steps(keyword_id, locators_to_add):
+    """
+    [DEPRECATED - Use add_quick_verify_steps_with_custom_args]
+    Adds 'Verify data form' steps with default arguments.
+    Calls the new function with default arguments.
+    """
+    locators_with_defaults = {}
+    for loc_name in locators_to_add:
+        locators_with_defaults[loc_name] = VERIFY_FORM_DEFAULTS.copy()
+        # Auto-generate default expected value variable
+        arg_var = generate_arg_name_from_locator(loc_name)
+        if not arg_var:
+             clean_loc = loc_name.replace('LOCATOR_', '').lower()
+             arg_var = f"${{{clean_loc or 'expected'}}}"
+        locators_with_defaults[loc_name]['exp_value'] = arg_var
+
+    add_quick_verify_steps_with_custom_args(keyword_id, locators_with_defaults)
+
+
+# --- *** ฟังก์ชันใหม่ *** ---
+def add_quick_verify_steps_with_custom_args(keyword_id, locators_with_custom_args):
+    """
+    Adds 'Verify data form' steps using provided locators and their specific
+    custom argument overrides. Also adds necessary arguments to the keyword.
+    """
     kw = get_keyword(keyword_id)
     if not kw:
         return
@@ -168,30 +207,34 @@ def add_quick_verify_steps(keyword_id, locators_to_add):
 
     current_arg_names = {arg['name'] for arg in kw['args']}
 
-    for loc_name in locators_to_add:
-        from .utils import generate_arg_name_from_locator
-        arg_var = generate_arg_name_from_locator(loc_name)
-        if not arg_var:
-             clean_loc = loc_name.replace('LOCATOR_', '').lower()
-             arg_var = f"${{{clean_loc or 'expected'}}}"
+    for loc_name, custom_args in locators_with_custom_args.items():
+        # Start building the args for this step
+        step_args = {
+            "locator_field": loc_name
+        }
 
+        # Merge the custom args provided
+        step_args.update(custom_args) # Adds/overwrites defaults
+
+        # Get the exp_value (which might have been auto-generated or user-modified)
+        arg_var = step_args.get('exp_value')
 
         new_step = {
             "id": str(uuid.uuid4()),
-            "keyword": "Verify data form", # Make sure this matches commonkeywords
-            "args": {
-                "locator_field": loc_name,
-                "expected_value": arg_var,
-                "select_attribute": "label"
-            }
+            "keyword": "Verify data form", # Match commonkeywords
+            "args": step_args
         }
+
         if 'steps' not in kw: kw['steps'] = []
         kw['steps'].append(new_step)
 
-        if arg_var not in current_arg_names:
-            kw['args'].append({'name': arg_var, 'default': ''}) # Add as dict
-            current_arg_names.add(arg_var)
+        # Add the exp_value as an argument if it looks like a variable and isn't already added
+        if arg_var and isinstance(arg_var, str) and arg_var.startswith("${") and arg_var.endswith("}"):
+            if arg_var not in current_arg_names:
+                kw['args'].append({'name': arg_var, 'default': ''})
+                current_arg_names.add(arg_var)
 
+    # Sort args list
     kw['args'] = sorted(kw['args'], key=lambda x: x['name'])
 
 # --- *** Script Generation (Correct version from previous steps) *** ---
