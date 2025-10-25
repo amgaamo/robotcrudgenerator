@@ -21,15 +21,26 @@ def inject_add_dialog_css():
             font-family: 'Inter', sans-serif; 
         }
         
+        /* ✅ FIX: เร่ง Dialog Animation */
+        div[data-testid="stDialog"] {
+            animation: fadeIn 0.15s ease-in !important;  /* เร็วขึ้นจาก 0.3s */
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.98); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        
         /* Dialog container adjustments */
         div[data-testid="stDialog"] > div > div[data-testid="stVerticalBlock"] > div:first-child {
             padding-top: 0.5rem !important;
         }
         
-        /* Dialog background - Semi-transparent to show background */
+        /* ✅ FIX: ลด blur effect เพื่อความเร็ว */
         div[data-testid="stDialog"] > div {
-            background-color: rgba(28, 33, 40, 0.75) !important;
-            backdrop-filter: blur(10px);
+            background-color: rgba(28, 33, 40, 0.95) !important;
+            backdrop-filter: blur(2px) !important;  /* ลดจาก 10px */
+            transition: opacity 0.1s ease-in !important;  /* เร็วขึ้น */
         }
         
         /* Back button styling */
@@ -51,6 +62,9 @@ def inject_add_dialog_css():
                 0 8px 24px rgba(0, 0, 0, 0.4),
                 inset 0 1px 0 rgba(255, 255, 255, 0.05);
             position: relative;
+            /* ✅ เพิ่ม GPU acceleration */
+            will-change: transform;
+            transform: translateZ(0);
         }
         
         .keyword-column::before {
@@ -76,6 +90,9 @@ def inject_add_dialog_css():
                 0 8px 24px rgba(0, 0, 0, 0.4),
                 inset 0 1px 0 rgba(255, 255, 255, 0.05);
             position: relative;
+            /* ✅ เพิ่ม GPU acceleration */
+            will-change: transform;
+            transform: translateZ(0);
         }
         
         .config-column::before {
@@ -88,7 +105,7 @@ def inject_add_dialog_css():
             background: linear-gradient(90deg, transparent, rgba(118, 131, 144, 0.3), transparent);
         }
         
-        /* Search box enhancement - Lighter background */
+        /* ✅ ปรับ Search box ให้ render เร็วขึ้น */
         div[data-testid="stDialog"] .stTextInput > div > div > input {
             background-color: #2d333b !important;
             border: 1px solid #444c56 !important;
@@ -96,12 +113,12 @@ def inject_add_dialog_css():
             padding: 0.65rem 1rem !important;
             font-size: 0.95rem !important;
             color: #adbac7 !important;
-            transition: all 0.2s ease-in-out !important;
+            transition: border-color 0.15s ease-in !important;  /* ลด transition time */
         }
         
         div[data-testid="stDialog"] .stTextInput > div > div > input:focus {
             border-color: #539bf5 !important;
-            box-shadow: 0 0 0 3px rgba(83, 155, 245, 0.15) !important;
+            box-shadow: 0 0 0 2px rgba(83, 155, 245, 0.15) !important;  /* ลด shadow */
             background-color: #22272e !important;
         }
         
@@ -109,7 +126,7 @@ def inject_add_dialog_css():
             color: #768390 !important;
         }
         
-        /* Expander improvements - Better contrast */
+        /* ✅ ปรับ Expander ให้ render เร็วขึ้น */
         div[data-testid="stDialog"] [data-testid="stExpander"] {
             background-color: transparent !important;
             border: none !important;
@@ -121,7 +138,7 @@ def inject_add_dialog_css():
             border: 1px solid #444c56 !important;
             border-radius: 6px !important;
             padding: 0.7rem 1rem !important;
-            transition: all 0.2s ease-in-out;
+            transition: background-color 0.15s ease-in !important;  /* ลด transition */
             color: #adbac7 !important;
         }
         
@@ -130,17 +147,7 @@ def inject_add_dialog_css():
             border-color: #539bf5 !important;
         }
         
-        div[data-testid="stDialog"] [data-testid="stExpander"][open] > div:first-child {
-            background-color: #373e47 !important;
-            border-color: #539bf5 !important;
-            box-shadow: 0 0 0 1px #539bf5;
-        }
-        
-        /* Keyword button enhancements - Better visibility */
-        div[data-testid="stDialog"] div[data-testid="stButton"] { 
-            margin: 4px 0; 
-        }
-        
+        /* ✅ ปรับ Button animation ให้เร็วขึ้น */
         div[data-testid="stDialog"] div[data-testid="stButton"] > button[kind="secondary"] {
             display: flex;
             align-items: center;
@@ -154,169 +161,19 @@ def inject_add_dialog_css():
             font-weight: 500;
             font-size: 0.92rem;
             text-align: left;
-            transition: all 0.2s ease-in-out;
+            transition: all 0.1s ease-in !important;  /* ลดจาก 0.2s */
         }
         
         div[data-testid="stDialog"] div[data-testid="stButton"] > button[kind="secondary"]:hover {
             border-color: #539bf5;
             background-color: #373e47;
             color: #cdd9e5;
-            transform: translateX(4px);
+            transform: translateX(2px);  /* ลดจาก 4px */
         }
         
-        div[data-testid="stDialog"] div[data-testid="stButton"] > button:focus:not(:active) {
-            border-color: #539bf5 !important;
-            box-shadow: 0 0 0 3px rgba(83, 155, 245, 0.15) !important;
-        }
-        
-        div[data-testid="stDialog"] .stButton button.active-keyword {
-            background-color: #316dca;
-            border-color: #539bf5;
-            color: #ffffff;
-            font-weight: 600;
-            box-shadow: 0 0 0 1px #539bf5, 0 4px 16px rgba(83, 155, 245, 0.3);
-            transform: translateX(4px);
-        }
-        
-        /* Section headers - Better contrast */
-        .section-header {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-size: 1rem;
-            font-weight: 600;
-            color: #adbac7;
-            margin-bottom: 1rem;
-            padding-bottom: 0.75rem;
-            border-bottom: 2px solid #373e47;
-        }
-        
-        .section-header-icon {
-            font-size: 1.25rem;
-        }
-        
-        /* Keyword info box - Enhanced visibility */
-        .keyword-info {
-            background-color: #2d333b;
-            border: 1px solid #444c56;
-            border-radius: 6px;
-            padding: 1.25rem;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-        
-        .keyword-info-title {
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: #539bf5;
-            margin-bottom: 0.75rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .keyword-info-title::before {
-            content: "⚙️";
-            font-size: 1.25rem;
-        }
-        
-        .keyword-info-doc {
-            color: #768390;
-            line-height: 1.6;
-            font-size: 0.9rem;
-        }
-        
-        /* Empty state styling - GitHub Dark style */
-        .empty-state {
-            text-align: center;
-            padding: 3rem 1.5rem;
-            color: #8b949e;
-        }
-        
-        .empty-state-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-            opacity: 0.4;
-        }
-        
-        .empty-state-text {
-            font-size: 1rem;
-            font-weight: 500;
-            color: #8b949e;
-        }
-        
-        /* Primary button enhancement - GitHub style */
-        div[data-testid="stDialog"] button[type="primary"] {
-            background-color: #238636 !important;
-            border: 1px solid rgba(240, 246, 252, 0.1) !important;
-            padding: 0.85rem 1.5rem !important;
-            font-weight: 600 !important;
-            font-size: 1rem !important;
-            border-radius: 6px !important;
-            color: #ffffff !important;
-            box-shadow: 0 0 transparent, 0 0 transparent, 0 1px 0 rgba(27, 31, 36, 0.04) !important;
-            transition: all 0.2s ease-in-out !important;
-        }
-        
-        div[data-testid="stDialog"] button[type="primary"]:hover {
-            background-color: #2ea043 !important;
-            border-color: rgba(240, 246, 252, 0.1) !important;
-            box-shadow: 0 0 transparent, 0 0 transparent, 0 1px 0 rgba(27, 31, 36, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
-        }
-        
-        /* Scrollbar styling - Better visibility */
-        .keyword-column::-webkit-scrollbar,
-        .config-column::-webkit-scrollbar {
-            width: 10px;
-        }
-        
-        .keyword-column::-webkit-scrollbar-track,
-        .config-column::-webkit-scrollbar-track {
-            background: #1c2128;
-            border-radius: 5px;
-        }
-        
-        .keyword-column::-webkit-scrollbar-thumb,
-        .config-column::-webkit-scrollbar-thumb {
-            background-color: #444c56;
-            border: 2px solid #22272e;
-            border-radius: 6px;
-        }
-        
-        .keyword-column::-webkit-scrollbar-thumb:hover,
-        .config-column::-webkit-scrollbar-thumb:hover {
-            background-color: #545d68;
-        }
-        
-        /* Category badge - Better contrast */
-        .category-badge {
-            display: inline-block;
-            background-color: #373e47;
-            color: #768390;
-            border: 1px solid #444c56;
-            padding: 0.2rem 0.6rem;
-            border-radius: 12px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            margin-left: 0.5rem;
-        }
-        
-        /* Reduce spacing */
-        div[data-testid="stDialog"] [data-testid="stVerticalBlock"] { 
-            gap: 0.25rem; 
-        }
-        
-        div[data-testid="stDialog"] h3 { 
-            margin-bottom: 0.5rem; 
-        }
-        
-        div[data-testid="stDialog"] h5 { 
-            margin-top: 0.5rem; 
-            margin-bottom: 0.3rem; 
-        }
-        
-        div[data-testid="stDialog"] .stDivider { 
-            margin: 0.5rem 0; 
+        /* ✅ ซ่อน animation ที่ไม่จำเป็น */
+        * {
+            -webkit-tap-highlight-color: transparent;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -654,64 +511,75 @@ def render_add_step_dialog_base(
                         for i, arg_item in enumerate(selected_kw.get('args', [])):
                             arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
                             raw_arg_name = arg_info.get('name')
-                            if not raw_arg_name: 
+                            if not raw_arg_name:
                                 continue
-                            
+
                             clean_arg_name = raw_arg_name.strip('${}')
                             arg_info['name'] = clean_arg_name
-                            
+
                             unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
                             form_input_keys.append(unique_key) # เก็บ Base Key
-                            
-                            # ดึงค่าปัจจุบันจาก session_state (ที่อาจถูก set โดย CSV Quick Insert)
+
                             current_value_in_state = st.session_state.get(unique_key)
-                            
                             if current_value_in_state is not None:
                                 arg_info['default'] = current_value_in_state
-                            
-                            # วาด Input (ฟังก์ชันนี้จะเติม Suffix _default_text, _locator_select ฯลฯ ให้เอง)
+
+                            # --- (1) ส่ง selected_kw_name ---
                             rendered_value = render_argument_input(
-                                arg_info, 
-                                ws_state, 
+                                arg_info,
+                                ws_state,
                                 unique_key,
-                                current_value=current_value_in_state
+                                current_value=current_value_in_state,
+                                selected_kw_name=selected_kw.get('name') # <-- เพิ่มตรงนี้
                             )
-                            # (เราไม่จำเป็นต้องใช้ rendered_value ที่นี่ เพราะ st.form จะจัดการ state เอง)
-                    
+
                     st.markdown("---")
-                    
-                    # 🔴 ปุ่ม Submit ที่หายไป 🔴
+
                     submitted_add = st.form_submit_button(
-                        f"✅ Add Step to Workspace", 
-                        type="primary", 
+                        f"✅ Add Step to Workspace",
+                        type="primary",
                         use_container_width=True
                     )
-                    # 🔴 END: สิ้นสุดบล็อกโค้ดที่หายไป 🔴
 
-                    # ▼▼▼ บล็อกโค้ดสำหรับ "ประมวลผล" (Logic) ที่คุณมีอยู่แล้ว (แต่ต้องอยู่ข้างใน if) ▼▼▼
                     if submitted_add:
-                        final_args_data = {} # ✅ สร้างตัวแปร (แก้ NameError)
-                        
+                        final_args_data = {}
                         if selected_kw.get('args'):
                             for i, arg_item in enumerate(selected_kw.get('args', [])):
                                 arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
                                 raw_arg_name = arg_info.get('name')
-                                if not raw_arg_name: 
-                                    continue
-                                
+                                if not raw_arg_name: continue
+
                                 clean_arg_name = raw_arg_name.strip('${}')
                                 arg_info['name'] = clean_arg_name
-                                
                                 unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
-                                
-                                # --- START: NEW SMART KEY LOGIC ---
+                                kw_name_lower = str(selected_kw.get('name', '')).lower() # ชื่อ Keyword ที่เลือก
+
+                                # --- (2) START: MODIFIED SMART KEY LOGIC (SAVE V5) ---
                                 final_value = None
-                                
-                                # Re-run the logic from ui_common.render_argument_input
-                                is_locator_arg = any(s in clean_arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'menu', 'header', 'body', 'theader', 'tbody'])
-                                
-                                # 1. 🐞 FIX: ตรวจสอบ PRESETS ก่อน
-                                if clean_arg_name in ARGUMENT_PRESETS:
+                                is_locator_arg_other = any(s in clean_arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'header', 'body', 'theader', 'tbody'])
+
+                                # 1. ตรวจสอบ Argument/Keyword พิเศษ (Menu Locators)
+                                if 'go to menu name' in kw_name_lower and clean_arg_name == 'menu_locator':
+                                    selected_main = st.session_state.get(f"{unique_key}_main_menu_select", '')
+                                    final_value = f"${{mainmenu}}[{selected_main}]" if selected_main else ""
+
+                                elif 'go to submenu name' in kw_name_lower and clean_arg_name == 'main_menu':
+                                    # ✅ FIX: แปลงเป็น ${mainmenu}[key]
+                                    selected_main_key = st.session_state.get(f"{unique_key}_main_menu_select", '')
+                                    final_value = f"${{mainmenu}}[{selected_main_key}]" if selected_main_key else ""
+
+                                elif 'go to submenu name' in kw_name_lower and clean_arg_name == 'submenu':
+                                    # ✅ FIX: แปลงเป็น ${submenu}[key]
+                                    selected_sub_key = st.session_state.get(f"{unique_key}_sub_menu_select", '')
+                                    final_value = f"${{submenu}}[{selected_sub_key}]" if selected_sub_key else ""
+
+                                elif clean_arg_name == 'pagename':
+                                    # ✅ NEW: เพิ่ม support สำหรับ pagename
+                                    selected_page_key = st.session_state.get(f"{unique_key}_pagename_select", '')
+                                    final_value = f"${{menuname}}[{selected_page_key}]" if selected_page_key else ""
+
+                                # 2. ตรวจสอบ PRESETS
+                                elif clean_arg_name in ARGUMENT_PRESETS:
                                     config = ARGUMENT_PRESETS[clean_arg_name]
                                     input_type = config.get('type')
                                     if input_type == "select_or_input":
@@ -720,34 +588,34 @@ def render_add_step_dialog_base(
                                             final_value = st.session_state.get(f"{unique_key}_custom")
                                         else:
                                             final_value = selected
-                                    else:
-                                        # 'boolean' or 'select'
+                                    elif input_type == "boolean":
+                                        final_value = 'true' if st.session_state.get(unique_key, False) else 'false'
+                                    else: # select
                                         final_value = st.session_state.get(unique_key)
-                                
-                                # 2. 🐞 FIX: ค่อยตรวจสอบ LOCATOR ทีหลัง
-                                elif is_locator_arg:
+
+                                # 3. ตรวจสอบ LOCATOR อื่นๆ
+                                elif is_locator_arg_other:
                                     final_value = st.session_state.get(f"{unique_key}_locator_select")
 
-                                # 3. ตรวจสอบ PATTERNS
+                                # 4. ตรวจสอบ PATTERNS
                                 else:
                                     matched_pattern = False
-                                    arg_lower = clean_arg_name.lower()
+                                    arg_lower_pattern = clean_arg_name.lower()
                                     for pattern_key in ARGUMENT_PATTERNS.keys():
-                                        if pattern_key in arg_lower:
+                                        if pattern_key in arg_lower_pattern:
                                             final_value = st.session_state.get(unique_key)
                                             matched_pattern = True
                                             break
-                                    
-                                    # 4. Default Text Input
+                                    # 5. Default Text Input
                                     if not matched_pattern:
                                         final_value = st.session_state.get(f"{unique_key}_default_text")
-                                
-                                # Fallback to the original logic if new value is None
+
+                                # Fallback
                                 if final_value is None:
-                                    final_value = st.session_state.get(unique_key, '') # Fallback
-                                    
+                                    final_value = st.session_state.get(unique_key, '')
+
                                 final_args_data[clean_arg_name] = final_value
-                                # --- END: NEW SMART KEY LOGIC ---
+                                # --- END: MODIFIED SMART KEY LOGIC (SAVE V5) ---
 
                         # ✅ แก้ไข IndentationError
                         new_step = {
@@ -776,6 +644,9 @@ def render_add_step_dialog_base(
                                 # เพิ่ม Key ที่มี Suffix ที่เป็นไปได้ทั้งหมด
                                 form_input_keys_to_clean_on_submit.append(unique_key)
                                 form_input_keys_to_clean_on_submit.append(f"{unique_key}_locator_select")
+                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_main_menu_select")
+                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_sub_menu_select")
+                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_pagename_select")
                                 form_input_keys_to_clean_on_submit.append(f"{unique_key}_select")
                                 form_input_keys_to_clean_on_submit.append(f"{unique_key}_custom")
                                 form_input_keys_to_clean_on_submit.append(f"{unique_key}_default_text")

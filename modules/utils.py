@@ -325,94 +325,300 @@ def parse_data_sources(content: str):
 def format_robot_step_line(step):
     """
     Helper to format a single step object into a string with its keyword and named arguments.
-    (Moved from test_flow_manager.py)
+    
+    🔧 FIXED V10: Smart Variable Detection
+    ✅ Menu dictionary: ${mainmenu}[configuration]
+    ✅ UPPERCASE variables: HOST_IMAP_TEMPEMAIL → ${HOST_IMAP_TEMPEMAIL}
+    ✅ LOCATOR_ prefix: LOCATOR_USERNAME → ${LOCATOR_USERNAME}
+    ✅ Text values: label → label (ไม่ใส่ ${})
     """
     keyword = step.get('keyword', '')
     args = step.get('args', {})
+    kw_padding = "    " # 4 spaces
 
-    def format_value(arg_name, arg_value):
-        if arg_value == "": return "${EMPTY}"
-        if arg_value is None: return None
-        is_locator = any(s in arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'menu', 'theader', 'tbody'])
-        if isinstance(arg_value, str) and arg_value.startswith('${') and arg_value.endswith('}'):
-            return arg_value
-        if is_locator:
-            return f"${{{arg_value}}}"
-        if isinstance(arg_value, bool):
-            return str(arg_value).lower()
-        return arg_value
-
+    # --- Handle special table verification keyword ---
     if keyword.strip() == 'Verify Result of data table':
         fixed_args = {}
         col_args = {}
         for k, v in args.items():
-            if k.startswith('col.') or k.startswith('assert.') or k.startswith('expected.'):
+            if k.startswith(('col.', 'assert.', 'expected.')):
                 col_args[k] = v
             else:
                 fixed_args[k] = v
 
         first_line_parts = [keyword]
-        for name, value in fixed_args.items():
-             robot_name = 'ignore_case' if name == 'ignorcase' else name
-             formatted_val = format_value(name, value)
-             if formatted_val is not None:
-                  first_line_parts.append(f"{robot_name}={formatted_val}")
+        fixed_arg_order = sorted(fixed_args.keys())
+        
+        for name in fixed_arg_order:
+            value = fixed_args[name]
+            robot_name = 'ignore_case' if name == 'ignorcase' else name
 
+            # --- Apply V10 Smart Logic ---
+            formatted_val = None
+            if value is None or value == '':
+                formatted_val = '${EMPTY}'
+            else:
+                v_str = str(value).strip()
+                
+                # Pattern 1: Menu dictionary
+                menu_pattern = r'^(\$\{)?(mainmenu|submenu|menuname|homemenu)(\})?\[([^\]]+)\]$'
+                menu_match = re.match(menu_pattern, v_str)
+                
+                if menu_match:
+                    dict_name = menu_match.group(2)
+                    dict_key = menu_match.group(4)
+                    formatted_val = f"${{{dict_name}}}[{dict_key}]"
+                
+                # Pattern 2: Already has ${...}
+                elif re.match(r'^[$@&]\{.*\}$', v_str):
+                    formatted_val = v_str
+                
+                # Pattern 3: ${EMPTY} or boolean
+                elif v_str == '${EMPTY}' or v_str.lower() in ['true', 'false']:
+                    formatted_val = v_str.capitalize() if v_str.lower() in ['true', 'false'] else v_str
+                
+                # Pattern 4: UPPERCASE_WITH_UNDERSCORE ✅ NEW!
+                elif re.match(r'^[A-Z][A-Z0-9_]*$', v_str):
+                    formatted_val = f"${{{v_str}}}"
+                
+                # Pattern 5: LOCATOR_ prefix
+                elif v_str.startswith('LOCATOR_'):
+                    formatted_val = f"${{{v_str}}}"
+                
+                # Pattern 6: Text values
+                else:
+                    formatted_val = v_str
+
+            if formatted_val is not None:
+                first_line_parts.append(f"{robot_name}={formatted_val}")
+
+        # --- Column assertions ---
         column_lines = []
-        column_ids = sorted(list(set([k.split('.')[1] for k in col_args if k.startswith('col.')])))
+        column_ids = sorted(list(set([k.split('.')[1] for k in col_args])))
 
         for col_id in column_ids:
-            line_parts = ["..."]
-            col_name = f"col.{col_id}"
-            assert_name = f"assert.{col_id}"
-            expected_name = f"expected.{col_id}"
+            line_parts = []
+            col_name_key = f"col.{col_id}"
+            assert_key = f"assert.{col_id}"
+            expected_key = f"expected.{col_id}"
 
-            val = format_value(col_name, col_args.get(col_name))
-            if val is not None: line_parts.append(f"{col_name}={val}")
-            val = format_value(assert_name, col_args.get(assert_name))
-            if val is not None: line_parts.append(f"{assert_name}={val}")
-            val = format_value(expected_name, col_args.get(expected_name))
-            if val is not None: line_parts.append(f"{expected_name}={val}")
+            for part_key in [col_name_key, assert_key, expected_key]:
+                part_value = col_args.get(part_key)
 
-            column_lines.append("    ".join(line_parts))
+                # --- Apply V10 Smart Logic ---
+                formatted_part_val = None
+                if part_value is None or part_value == '':
+                    formatted_part_val = '${EMPTY}'
+                else:
+                    pv_str = str(part_value).strip()
+                    
+                    # Pattern 1: Menu dictionary
+                    menu_pattern = r'^(\$\{)?(mainmenu|submenu|menuname|homemenu)(\})?\[([^\]]+)\]$'
+                    menu_match = re.match(menu_pattern, pv_str)
+                    
+                    if menu_match:
+                        dict_name = menu_match.group(2)
+                        dict_key = menu_match.group(4)
+                        formatted_part_val = f"${{{dict_name}}}[{dict_key}]"
+                    
+                    # Pattern 2: Already has ${...}
+                    elif re.match(r'^[$@&]\{.*\}$', pv_str):
+                        formatted_part_val = pv_str
+                    
+                    # Pattern 3: ${EMPTY} or boolean
+                    elif pv_str == '${EMPTY}' or pv_str.lower() in ['true', 'false']:
+                        formatted_part_val = pv_str.capitalize() if pv_str.lower() in ['true', 'false'] else pv_str
+                    
+                    # Pattern 4: UPPERCASE_WITH_UNDERSCORE ✅ NEW!
+                    elif re.match(r'^[A-Z][A-Z0-9_]*$', pv_str):
+                        formatted_part_val = f"${{{pv_str}}}"
+                    
+                    # Pattern 5: LOCATOR_ prefix
+                    elif pv_str.startswith('LOCATOR_'):
+                        formatted_part_val = f"${{{pv_str}}}"
+                    
+                    # Pattern 6: Text values
+                    else:
+                        formatted_part_val = pv_str
 
-        final_output = "    ".join(first_line_parts)
+                if formatted_part_val is not None:
+                    line_parts.append(f"{part_key}={formatted_part_val}")
+
+            if line_parts:
+                column_lines.append(f"...{kw_padding}" + kw_padding.join(line_parts))
+
+        final_output = kw_padding.join(first_line_parts)
         if column_lines:
-            final_output += "\n" + "\n".join([f"    {line}" for line in column_lines])
+            final_output += "\n" + "\n".join([f"{kw_padding}{line}" for line in column_lines])
         return final_output
 
-    line_parts = [keyword]
-    for arg_name, arg_value in args.items():
-        formatted_value = format_value(arg_name, arg_value)
-        if formatted_value is not None:
-             line_parts.append(f"{arg_name}={formatted_value}")
 
-    return "    ".join(line_parts)
+    # --- Standard keyword formatting ---
+    parts = [keyword]
+    valid_args = {k: v for k, v in args.items() if v is not None}
+    arg_order = sorted(valid_args.keys(), key=lambda x: (
+        0 if 'locator' in x.lower() else
+        1 if x == 'main_menu' else
+        2 if x == 'submenu' else
+        3 # Other args
+    ))
+
+    for arg_name in arg_order:
+        value = valid_args[arg_name]
+        arg_name_lower = arg_name.lower()
+
+        # Handle empty strings
+        if value == '':
+            # Skip adding empty menu arguments entirely
+            if arg_name_lower in ['menu_locator', 'main_menu', 'submenu']:
+                continue
+            else:
+                value = '${EMPTY}'
+
+        # --- START: FIXED V10 (Smart Formatting Logic) ---
+        formatted_value = None
+
+        if isinstance(value, str):
+            v_str = str(value).strip()
+            
+            # Pattern 1: Menu dictionary access
+            menu_pattern = r'^(\$\{)?(mainmenu|submenu|menuname|homemenu)(\})?\[([^\]]+)\]$'
+            menu_match = re.match(menu_pattern, v_str)
+            
+            if menu_match:
+                dict_name = menu_match.group(2)
+                dict_key = menu_match.group(4)
+                formatted_value = f"${{{dict_name}}}[{dict_key}]"
+            
+            # Pattern 2: Already has ${...}
+            elif re.match(r'^[$@&]\{.*\}$', v_str):
+                formatted_value = v_str
+            
+            # Pattern 3: ${EMPTY} or boolean
+            elif v_str == '${EMPTY}' or v_str.lower() in ['true', 'false']:
+                formatted_value = v_str.capitalize() if v_str.lower() in ['true', 'false'] else v_str
+            
+            # Pattern 4: UPPERCASE_WITH_UNDERSCORE ✅ NEW!
+            elif re.match(r'^[A-Z][A-Z0-9_]*$', v_str):
+                formatted_value = f"${{{v_str}}}"
+            
+            # Pattern 5: LOCATOR_ prefix
+            elif v_str.startswith('LOCATOR_'):
+                formatted_value = f"${{{v_str}}}"
+            
+            # Pattern 6: Text values
+            else:
+                formatted_value = v_str
+
+        # Handle boolean type
+        elif isinstance(value, bool):
+            formatted_value = 'True' if value else 'False'
+
+        # Handle other types
+        else:
+            formatted_value = str(value)
+        # --- END: FIXED V10 ---
+
+        if formatted_value is not None:
+            parts.append(f"{arg_name}={formatted_value}")
+
+
+    # --- Line breaking logic ---
+    if len(parts) == 1:
+        return parts[0]
+
+    first_line = parts[0]
+    remaining_parts = parts[1:]
+    lines = [first_line]
+    current_line_len = len(first_line)
+    LINE_LENGTH_THRESHOLD = 120
+    kw_padding = "    "
+
+    for i, part in enumerate(remaining_parts):
+        part_with_padding = f"{kw_padding}{part}"
+        part_len = len(part_with_padding)
+
+        if current_line_len > len(first_line) and (current_line_len + part_len > LINE_LENGTH_THRESHOLD):
+            lines.append(f"...{kw_padding}{part}")
+            current_line_len = len(lines[-1])
+        else:
+            lines[-1] += part_with_padding
+            current_line_len += part_len
+
+    return "\n".join(lines)
 
 
 def format_args_as_string(args_dict):
     """
     Helper to format arguments as a simple string for st.caption
-    (Moved from ui_common.py)
+    
+    🔧 FIXED V10: Smart Variable Detection
+    ✅ Menu dictionary: ${mainmenu}[configuration]
+    ✅ UPPERCASE variables: HOST_IMAP_TEMPEMAIL → ${HOST_IMAP_TEMPEMAIL}
+    ✅ LOCATOR_ prefix: LOCATOR_USERNAME → ${LOCATOR_USERNAME}
+    ✅ Text values: label → label (ไม่ใส่ ${})
     """
     if not args_dict:
         return ""
+    
     parts = []
     for k, v in args_dict.items():
         if k == 'assertion_columns': 
             continue
 
-        if isinstance(v, dict) and 'name' in v:
-            # Relies on get_clean_locator_name, which is now in this file
+        val_str = None
+        
+        # ===== 🔧 FIXED: Smart Value Formatting =====
+        if isinstance(v, str):
+            v_str = str(v).strip()
+            
+            # Pattern 1: Menu dictionary - ${mainmenu}[configuration]
+            menu_pattern = r'^(\$\{)?(mainmenu|submenu|menuname|homemenu)(\})?\[([^\]]+)\]$'
+            menu_match = re.match(menu_pattern, v_str)
+            
+            if menu_match:
+                dict_name = menu_match.group(2)
+                dict_key = menu_match.group(4)
+                val_str = f"${{{dict_name}}}[{dict_key}]"
+            
+            # Pattern 2: Already has ${...} or &{...} or @{...}
+            elif re.match(r'^[$@&]\{.*\}$', v_str):
+                val_str = v_str
+            
+            # Pattern 3: ${EMPTY} or boolean
+            elif v_str == '${EMPTY}' or v_str.lower() in ['true', 'false']:
+                val_str = v_str.capitalize() if v_str.lower() in ['true', 'false'] else v_str
+            
+            # Pattern 4: UPPERCASE_WITH_UNDERSCORE (likely a variable) ✅ NEW!
+            elif re.match(r'^[A-Z][A-Z0-9_]*$', v_str):
+                val_str = f"${{{v_str}}}"
+            
+            # Pattern 5: LOCATOR_ prefix
+            elif v_str.startswith('LOCATOR_'):
+                val_str = f"${{{v_str}}}"
+            
+            # Pattern 6: Text values (lowercase, mixed case, or numbers)
+            else:
+                val_str = v_str
+        
+        # Handle dict type (legacy)
+        elif isinstance(v, dict) and 'name' in v:
             val_str = get_clean_locator_name(v['name'])
+        
+        # Handle boolean
+        elif isinstance(v, bool):
+            val_str = 'True' if v else 'False'
+        
         elif v or v is False:
             val_str = str(v)
         else:
             continue
-
-        parts.append(f"{k}={val_str}")
-
-    full_str = ", ".join(parts)
+        
+        if val_str is not None:
+            parts.append(f"{k}={val_str}")
+    
+    # Use 4 spaces as separator (Robot Framework standard)
+    full_str = "    ".join(parts)
     return full_str
 
 # ===================================================================

@@ -1947,7 +1947,7 @@ def render_resources_view_new():
                 
                 valid_vars = [v for v in ws_state['common_variables'] if v.get('name')]
                 
-                with st.expander(f"Show/Hide Loaded Common Variables ({len(valid_vars)} items)", expanded=True):
+                with st.expander(f"Show/Hide Loaded Common Variables ({len(valid_vars)} items)", expanded=False):
                     
                     st.markdown("""<style>
                     .common-var-code {

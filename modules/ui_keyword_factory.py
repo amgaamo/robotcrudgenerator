@@ -590,6 +590,8 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
             st.session_state[temp_args_key] = {} # Reset args
             if selected_kw_name == 'IF Condition':
                  st.session_state[temp_args_key]['condition'] = step.get('args', {}).get('condition', '') # Keep existing condition if switching back to IF
+            elif selected_kw_name == 'ELSE IF Condition': # <-- เพิ่ม
+                 st.session_state[temp_args_key]['condition'] = step.get('args', {}).get('condition', '') # Keep existing condition
             elif selected_kw and selected_kw.get('args'):
                 # Pre-fill with default values for the NEW keyword
                 for arg_item in selected_kw.get('args', []):
@@ -641,7 +643,8 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
                     arg_info,
                     ws_state,
                     input_key,
-                    current_value=current_value
+                    current_value=current_value,
+                    selected_kw_name=selected_kw.get('name') # <--- Pass selected keyword name
                 )
 
                 # --- Argument Suggestion Logic ---
@@ -658,12 +661,17 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
                                widget_key = f"{widget_key_base}_select"
                      elif any(s in arg_info.get('name').lower() for s in ['locator', 'field', 'button', 'element', 'menu', 'header', 'body', 'theader', 'tbody']):
                            widget_key = f"{widget_key_base}_locator_select"
+                     # === ADDED FIX for Menu Locator ===
+                     elif 'menu' in arg_info.get('name').lower():
+                         # Menu uses two keys, we don't suggest for it
+                         pass
+                     # ==================================
                      else: # Fallback for text input
                            widget_key = f"{widget_key_base}_default_text"
 
-                     current_rendered_value = st.session_state.get(widget_key, '')
+                     current_rendered_value = st.session_state.get(widget_key, '') if widget_key else '' # Check if widget_key exists
 
-                     if not current_rendered_value or not (isinstance(current_rendered_value, str) and current_rendered_value.startswith('${') and current_rendered_value.endswith('}')):
+                     if current_rendered_value and not (isinstance(current_rendered_value, str) and current_rendered_value.startswith('${') and current_rendered_value.endswith('}')):
                           locator_arg_value = None
                           temp_step_args_sugg = st.session_state.get(temp_args_key, {})
                           if 'locator_field' in temp_step_args_sugg: locator_arg_value = temp_step_args_sugg['locator_field']
@@ -689,12 +697,27 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
                                st.rerun()
                 # --- End Suggestion ---
 
-                # --- Update temp state from widget (copied logic) ---
+                # --- Update temp state from widget (copied logic with MENU FIX) ---
                 final_value = None
                 is_locator_arg = any(s in clean_arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'menu', 'header', 'body', 'theader', 'tbody'])
 
                 if is_locator_arg:
-                    final_value = st.session_state.get(f"{input_key}_locator_select", current_value)
+                    if 'menu' in clean_arg_name.lower():
+                        selected_main = st.session_state.get(f"{input_key}_main_menu_select", '')
+                        selected_sub = st.session_state.get(f"{input_key}_sub_menu_select", '')
+
+                        parts = []
+                        if selected_main:
+                            parts.append(f"${{mainmenu}}[{selected_main}]")
+                        # เพิ่ม Submenu เฉพาะถ้า Keyword เป็น Go to SUBMENU name
+                        kw_name_lower = str(selected_kw.get('name', '')).lower()
+                        if selected_sub and 'go to submenu name' in kw_name_lower:
+                            parts.append(f"${{submenu}}[{selected_sub}]")
+
+                        final_value = "    ".join(parts) # Join with 4 spaces
+                    else:
+                        final_value = st.session_state.get(f"{input_key}_locator_select", current_value)
+
                 elif clean_arg_name in ARGUMENT_PRESETS:
                     config = ARGUMENT_PRESETS[clean_arg_name]
                     preset_type = config.get('type')
@@ -722,12 +745,12 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
                 st.session_state[temp_args_key][clean_arg_name] = final_value if final_value is not None else current_value
 
 
-        elif not selected_kw and selected_kw_name not in ['IF Condition', 'END']:
+        elif not selected_kw and selected_kw_name not in ['IF Condition', 'ELSE IF Condition', 'ELSE', 'END']:
             st.warning("Selected keyword definition not found.")
 
         # --- Output Variable UI ---
-        # (Only show if not IF or END step)
-        if selected_kw_name not in ['IF Condition', 'END']:
+        # (Only show if not IF, ELSE IF, ELSE, or END step)
+        if selected_kw_name not in ['IF Condition', 'ELSE IF Condition', 'ELSE', 'END']:
             st.markdown("---")
             st.markdown("**⚙️ Output Variable (Optional)**")
             st.caption("Set the result of this step to a variable.")
@@ -804,7 +827,7 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
                 # Read final args from temp state
                 final_args = st.session_state.get(temp_args_key, {}).copy()
 
-                # Special handling for IF condition
+                # Special handling for IF/ELSE IF/ELSE/END
                 if selected_kw_name == 'IF Condition':
                      final_args = {'condition': final_args.get('condition', '')}
                 elif selected_kw_name == 'ELSE IF Condition': # <-- เพิ่ม
@@ -828,7 +851,16 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
                            clean_arg_name = arg_item.get('name', '').strip('${}')
                            if clean_arg_name:
                                 keys_to_delete.append(f"kw_factory_edit_{step['id']}_{clean_arg_name}")
-                                keys_to_delete.extend([f"kw_factory_edit_{step['id']}_{clean_arg_name}_select", f"kw_factory_edit_{step['id']}_{clean_arg_name}_custom", f"kw_factory_edit_{step['id']}_{clean_arg_name}_locator_select", f"kw_factory_edit_{step['id']}_{clean_arg_name}_default_text"])
+                                # === ADDED FIX for Menu Locator Keys ===
+                                keys_to_delete.extend([
+                                     f"kw_factory_edit_{step['id']}_{clean_arg_name}_select",
+                                     f"kw_factory_edit_{step['id']}_{clean_arg_name}_custom",
+                                     f"kw_factory_edit_{step['id']}_{clean_arg_name}_locator_select",
+                                     f"kw_factory_edit_{step['id']}_{clean_arg_name}_default_text",
+                                     f"kw_factory_edit_{step['id']}_{clean_arg_name}_main_menu_select", # New
+                                     f"kw_factory_edit_{step['id']}_{clean_arg_name}_sub_menu_select"   # New
+                                ])
+                                # =======================================
 
                 for key in keys_to_delete:
                     if key in st.session_state:
@@ -851,7 +883,16 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
                             clean_arg_name = arg_item.get('name', '').strip('${}')
                             if clean_arg_name:
                                  keys_to_delete.append(f"kw_factory_edit_{step['id']}_{clean_arg_name}")
-                                 keys_to_delete.extend([f"kw_factory_edit_{step['id']}_{clean_arg_name}_select", f"kw_factory_edit_{step['id']}_{clean_arg_name}_custom", f"kw_factory_edit_{step['id']}_{clean_arg_name}_locator_select", f"kw_factory_edit_{step['id']}_{clean_arg_name}_default_text"])
+                                 # === ADDED FIX for Menu Locator Keys ===
+                                 keys_to_delete.extend([
+                                      f"kw_factory_edit_{step['id']}_{clean_arg_name}_select",
+                                      f"kw_factory_edit_{step['id']}_{clean_arg_name}_custom",
+                                      f"kw_factory_edit_{step['id']}_{clean_arg_name}_locator_select",
+                                      f"kw_factory_edit_{step['id']}_{clean_arg_name}_default_text",
+                                      f"kw_factory_edit_{step['id']}_{clean_arg_name}_main_menu_select", # New
+                                      f"kw_factory_edit_{step['id']}_{clean_arg_name}_sub_menu_select"   # New
+                                 ])
+                                 # =======================================
 
                  for key in keys_to_delete:
                       if key in st.session_state:
