@@ -218,18 +218,18 @@ def generate_robot_script_for_keyword(keyword_id):
         if args_parts:
             script.append(f"    [Arguments]    {'    '.join(args_parts)}")
 
-    # --- Documentation Section ---
-    doc = kw.get('doc')
-    if doc:
-        doc_lines = doc.split('\n')
-        script.append(f"    [Documentation]    {doc_lines[0]}")
-        for line in doc_lines[1:]:
-            script.append(f"    ...    {line}") # Consistent 4 spaces before ...
+    # # --- Documentation Section ---
+    # doc = kw.get('doc')
+    # if doc:
+    #     doc_lines = doc.split('\n')
+    #     script.append(f"    [Documentation]    {doc_lines[0]}")
+    #     for line in doc_lines[1:]:
+    #         script.append(f"    ...    {line}") # Consistent 4 spaces before ...
 
-    # --- Tags Section ---
-    tags = kw.get('tags')
-    if tags:
-        script.append(f"    [Tags]    {', '.join(tags)}") # Use comma space
+    # # --- Tags Section ---
+    # tags = kw.get('tags')
+    # if tags:
+    #     script.append(f"    [Tags]    {', '.join(tags)}") # Use comma space
 
 # --- Steps Section ---
     steps = kw.get('steps') # Corrected variable name

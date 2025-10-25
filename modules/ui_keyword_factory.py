@@ -30,16 +30,6 @@ def render_keyword_factory_tab():
     kw_manager.initialize_workspace()
     ws = kw_manager._get_workspace()
 
-    # --- Dialog Handlers ---
-    if st.session_state.get('show_kw_factory_add_dialog'):
-        render_kw_factory_add_step_dialog()
-    if st.session_state.get('show_kw_factory_fill_form_dialog'):
-        render_kw_factory_fill_form_dialog()
-    if st.session_state.get('show_kw_factory_verify_dialog'):
-        render_kw_factory_verify_detail_dialog()
-    if st.session_state.get('show_kw_factory_api_csv_dialog'):
-        render_kw_factory_api_csv_step_dialog()
-
     # --- Main View Switching (List vs. Editor) ---
     if ws.get('active_keyword_id') is None:
         render_keyword_list_view(ws)
@@ -54,7 +44,7 @@ def render_keyword_list_view(ws):
     st.markdown("<h3 style='font-size: 1.6rem;'>🏭 Keyword Factory</h3>", unsafe_allow_html=True)
     st.caption("Create and manage reusable, high-level keywords from smaller steps.")
 
-    if st.button("➕ Create New Keyword", type="primary", use_container_width=True):
+    if st.button("➕ Create New Keyword", width='content', type="secondary"):
         kw_manager.create_new_keyword()
         st.rerun()
 
@@ -242,42 +232,8 @@ def render_keyword_editor_view(ws):
 
             st.markdown("---") # เส้นคั่น
 
-            # ***** Documentation *****
-            st.text_area(
-                "Documentation",
-                value=kw['doc'],
-                key=f"kw_doc_{keyword_id}",
-                height=100,
-                on_change=lambda: kw_manager.update_keyword_details(
-                    keyword_id,
-                    st.session_state[f"kw_name_{keyword_id}"],
-                    st.session_state[f"kw_doc_{keyword_id}"],
-                    # Args removed from here
-                    st.session_state[f"kw_tags_{keyword_id}"]
-                )
-            )
-            # ***** End Documentation *****
-
-            st.markdown("---") # เส้นคั่น
-
-            # ***** Tags *****
-            st.text_input(
-                "Tags (comma-separated)",
-                value=", ".join(kw.get('tags', [])),
-                key=f"kw_tags_{keyword_id}",
-                placeholder="tag1, tag2",
-                 on_change=lambda: kw_manager.update_keyword_details(
-                    keyword_id,
-                    st.session_state[f"kw_name_{keyword_id}"],
-                    st.session_state[f"kw_doc_{keyword_id}"],
-                    # Args removed from here
-                    st.session_state[f"kw_tags_{keyword_id}"]
-                )
-            )
-            # ***** End Tags *****
-
         # --- 2. Quick Templates ---
-        with st.expander("🤖 Quick Step Templates", expanded=False):
+        with st.expander("⚡Quick Step Templates", expanded=False):
             st.info("Add multiple steps at once based on locators.")
             t_col1, t_col2 = st.columns(2)
             with t_col1:
@@ -353,20 +309,36 @@ def render_keyword_editor_view(ws):
              st.warning("⚠️ Project path not set in sidebar. Save options disabled.")
         elif save_option == "Append to Existing File":
             all_robot_files = st.session_state.project_structure.get('robot_files', [])
-            target_folder = "resources" # Suggest saving to resources
+            target_folder_1 = "resources"
+            target_folder_2 = "pageobjects"
 
-            resource_files = [
+            # 1. Get files from 'resources'
+            resource_files_list = [
                 f for f in all_robot_files
-                if f.replace(os.sep, '/').startswith(target_folder + '/')
+                if f.replace(os.sep, '/').startswith(target_folder_1 + '/')
+            ]
+            
+            # 2. Get files from 'pageobjects'
+            pageobject_files_list = [
+                f for f in all_robot_files
+                if f.replace(os.sep, '/').startswith(target_folder_2 + '/')
             ]
 
-            if not resource_files:
-                st.warning(f"No files found in the `{target_folder}` folder.")
+            # 3. Combine them
+            combined_files_list = resource_files_list + pageobject_files_list
+            # --- END: MODIFICATION ---
+
+            if not combined_files_list: # Check the combined list
+                # Update the warning message
+                st.warning(f"No files found in `{target_folder_1}/` or `{target_folder_2}/` folders.")
             else:
-                file_options = [f.replace(os.sep, '/') for f in resource_files]
+                # Use the combined list for the options
+                file_options = [f.replace(os.sep, '/') for f in combined_files_list]
+                
                 selected_file = st.selectbox(
-                    f"Select a file in `{target_folder}/` to append to:",
-                    options=sorted(file_options),
+                    # Update the label to show both folders
+                    f"Select a file in `{target_folder_1}/` or `{target_folder_2}/` to append to:",
+                    options=sorted(file_options), # Sort the combined list
                     key="kw_append_target"
                 )
 
@@ -382,8 +354,16 @@ def render_keyword_editor_view(ws):
                         st.error(message)
 
         elif save_option == "Create New File":
-            target_folder = "resources" # Save new files here too
-            st.caption(f"File will be saved in the `{target_folder}/` folder.")
+            # --- START: MODIFICATION (Add folder selector) ---
+            # เพิ่ม st.radio นี้เข้าไปแทน:
+            selected_target_folder = st.radio(
+                "Save location:",
+                options=["resources", "pageobjects"],
+                index=0, # ค่าเริ่มต้นคือ 'resources'
+                key="kw_new_file_folder_radio",
+                horizontal=True
+            )
+            # --- END: MODIFICATION ---
 
             safe_kw_name = re.sub(r'[^a-zA-Z0-9_-]', '_', kw['name']).lower()
             default_filename = f"kw_{safe_kw_name}.resource"
@@ -398,6 +378,7 @@ def render_keyword_editor_view(ws):
                 if not new_file_name.endswith(('.robot', '.resource')):
                     st.error("File name must end with .robot or .resource")
                 else:
+                    # (โค้ด full_content = textwrap.dedent(...) เหมือนเดิม)
                     full_content = textwrap.dedent(f"""
 *** Settings ***
 # This file might need other resources, e.g.
@@ -413,7 +394,11 @@ def render_keyword_editor_view(ws):
 
 # ---  END: Generated by Keyword Factory  ---
 """)
-                    save_dir = os.path.join(project_path, target_folder)
+                    # --- START: MODIFICATION (Use selected folder) ---
+                    # แก้ไขบรรทัด save_dir ให้ใช้ค่าจาก st.radio
+                    save_dir = os.path.join(project_path, selected_target_folder)
+                    # --- END: MODIFICATION ---
+                    
                     os.makedirs(save_dir, exist_ok=True)
                     full_path = os.path.join(save_dir, new_file_name)
 
@@ -1017,7 +1002,7 @@ def render_kw_factory_api_csv_step_dialog():
 
 
 # ======= DIALOG: Quick Fill Form =======
-@st.dialog("Quick Template: Fill Form", width="large")
+@st.dialog("Quick Template: Fill Form", width="large", dismissible=False) # <-- เพิ่ม dismissible=False
 def render_kw_factory_fill_form_dialog():
     """
     Lets user select multiple locators to generate 'Fill in data form' steps.
@@ -1025,6 +1010,12 @@ def render_kw_factory_fill_form_dialog():
     ws_state = st.session_state.studio_workspace
     context = st.session_state.get('kw_factory_add_dialog_context', {})
     keyword_id = context.get("key") # This is the keyword_id
+    
+    # --- [START] เพิ่มปุ่ม Back ---
+    if st.button("← Back to Editor", key="back_fill_form_dialog"):
+        st.session_state.show_kw_factory_fill_form_dialog = False
+        st.rerun()
+    # --- [END] เพิ่มปุ่ม Back ---
     
     if not keyword_id:
         st.error("Error: Keyword context not found.")
@@ -1061,7 +1052,7 @@ def render_kw_factory_fill_form_dialog():
         st.rerun()
 
 # ======= DIALOG: Quick Verify Detail =======
-@st.dialog("Quick Template: Verify Detail", width="large")
+@st.dialog("Quick Template: Verify Detail", width="large", dismissible=False) # <-- เพิ่ม dismissible=False
 def render_kw_factory_verify_detail_dialog():
     """
     Lets user select multiple locators to generate 'Verify data form' steps.
@@ -1069,6 +1060,12 @@ def render_kw_factory_verify_detail_dialog():
     ws_state = st.session_state.studio_workspace
     context = st.session_state.get('kw_factory_add_dialog_context', {})
     keyword_id = context.get("key") # This is the keyword_id
+    
+    # --- [START] เพิ่มปุ่ม Back ---
+    if st.button("← Back to Editor", key="back_verify_dialog"):
+        st.session_state.show_kw_factory_verify_dialog = False
+        st.rerun()
+    # --- [END] เพิ่มปุ่ม Back ---
     
     if not keyword_id:
         st.error("Error: Keyword context not found.")

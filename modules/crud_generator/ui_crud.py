@@ -24,18 +24,6 @@ def render_crud_generator_tab():
     inject_hybrid_css()
     render_crud_generator_tab_improved()
 
-    # --- Dialog Handlers ---
-    if st.session_state.get('show_crud_add_dialog'):
-        render_crud_add_step_dialog()
-    if st.session_state.get('show_fill_form_dialog'):
-        render_fill_form_dialog()
-    if st.session_state.get('show_verify_detail_dialog'):
-        render_verify_detail_dialog()
-    # --- Updated Dialog Handler Check ---
-    if st.session_state.get('show_api_csv_dialog'):
-        render_api_csv_step_dialog() # Ensure this function is called
-
-
 # ======= NEW HELPER FUNCTION (V3.7) =======
 def render_generator_expander_content(ws):
     """Renders the content for the 'Auto-Generate Template' expander."""

@@ -38,8 +38,9 @@ def inject_add_dialog_css():
         
         /* ✅ FIX: ลด blur effect เพื่อความเร็ว */
         div[data-testid="stDialog"] > div {
-            background-color: rgba(28, 33, 40, 0.95) !important;
-            backdrop-filter: blur(2px) !important;  /* ลดจาก 10px */
+            background-color: rgba(15, 23, 42, 0.40) !important;  /* สีน้ำเงินเข้ม + โปร่ง */
+            backdrop-filter: blur(8px) saturate(1.2) !important;  /* Blur + เพิ่มสีสัน */
+            border: 1px solid rgba(255, 255, 255, 0.1) !important; /* ขอบโปร่งใส */
             transition: opacity 0.1s ease-in !important;  /* เร็วขึ้น */
         }
         
@@ -215,7 +216,7 @@ def _render_keyword_row(kw, key_prefix, selected_kw_state_key, recently_used_lis
 
 
 # --- Main Dialog Function ---
-@st.dialog("Add New Step", width="large")
+@st.dialog("Add New Step", width="large", dismissible=False)
 def render_add_step_dialog_base(
     dialog_state_key: str,
     context_state_key: str,
@@ -319,7 +320,7 @@ def render_add_step_dialog_base(
 
     # --- Back Button ---
     with st.container():
-        if st.button("← Back to Workspace", key=f"back_{dialog_state_key}"):
+        if st.button("← Back to Workspace", key=f"back_{dialog_state_key}", type="primary"):
             close_dialog_and_cleanup()
     
     st.markdown("<div style='margin-bottom: 1rem;'></div>", unsafe_allow_html=True)
@@ -382,15 +383,17 @@ def render_add_step_dialog_base(
         selected_kw = st.session_state.get(selected_kw_state_key)
 
         if selected_kw:
-            st.markdown('<div class="section-header"><span class="section-header-icon">⚙️</span>Configure Arguments</div>', unsafe_allow_html=True)
-            
-            doc_text = selected_kw.get('doc', 'No documentation available.')
-            st.markdown(f"""
-                <div class='keyword-info'>
-                    <div class='keyword-info-title'>{selected_kw['name']}</div>
-                    <div class='keyword-info-doc'>{doc_text}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                "<div style='font-size: 25px; font-weight: 600; margin-bottom: 0.5rem;'>⚙️ Configure Arguments</div>", 
+                unsafe_allow_html=True
+            )
+    
+            with st.container(border=True):
+                st.markdown(
+                    f"<span style='color: #1E90FF; font-weight: 600; font-size: 18px;'>{selected_kw['name']}</span>", 
+                    unsafe_allow_html=True
+                )
+                st.caption(selected_kw.get('doc', 'No documentation available.'))
 
             # --- Special Handling for Verify Result ---
             if selected_kw['name'].strip() == 'Verify Result of data table':

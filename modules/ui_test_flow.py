@@ -1189,9 +1189,6 @@ def generate_full_script(ws_state):
 def render_test_flow_tab():
     inject_test_flow_css()
     ws_state = st.session_state.studio_workspace
-    
-    if st.session_state.get('show_add_dialog'):
-        render_add_step_dialog()
 
     left_col, right_col = st.columns([0.6, 0.4], gap="large")
 

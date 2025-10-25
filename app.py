@@ -13,6 +13,7 @@ import uuid
 import json 
 import textwrap
 import re
+from streamlit_option_menu import option_menu
 
 # Backend imports
 from modules.session_manager import init_session_state 
@@ -38,9 +39,24 @@ from modules.keyword_categorizer import (
     get_expansion_config,
     get_category_priority
 )
-from modules.crud_generator.ui_crud import render_crud_generator_tab
-from modules.ui_keyword_factory import render_keyword_factory_tab
+
 from modules.menu_locator_manager import render_menu_locator_manager
+
+from modules.dialog_commonkw import render_add_step_dialog_base
+from modules.crud_generator import manager as crud_manager
+from modules.crud_generator.ui_crud import (
+    render_crud_generator_tab,
+    render_fill_form_dialog, 
+    render_verify_detail_dialog, 
+    render_api_csv_step_dialog
+)
+from modules import kw_manager
+from modules.ui_keyword_factory import (
+    render_keyword_factory_tab,
+    render_kw_factory_fill_form_dialog, 
+    render_kw_factory_verify_detail_dialog, 
+    render_kw_factory_api_csv_step_dialog
+)
 
 # HTML Parser
 try:
@@ -1820,36 +1836,110 @@ def render_live_code_preview(service_data):
                         st.error("Failed to create the file.")
 
 def render_studio_tab():
-    """ Renders the "Studio Workspace" using the new three-tab layout. """
-    st.markdown("### 🤖 Studio Workspace")
+    """ 
+    Renders the "Studio Workspace"
+    (FIXED V10: Added border to container for visibility)
+    """
+    st.markdown(
+        "### <br><br><i class='bi bi-robot'></i> Studio Workspace", 
+        unsafe_allow_html=True
+    )
     st.caption("A visual editor to build your complete Robot Framework test script.")
 
-    if st.session_state.studio_workspace.get('show_csv_creator'):
-        csv_creator_dialog()
+    # --- 1. กำหนด options และ icons ---
+    
+    tab_options_list = [
+        "Assets", 
+        "Test Data",
+        "Keyword Factory", 
+        "Test Flow",
+        "CRUD Generator"
+    ]
+    
+    tab_icons = [
+        "safe2-fill",
+        "server",
+        "gear-wide-connected",
+        "kanban",
+        "rocket-takeoff"
+    ]
 
-    # --- 1. สร้าง 3 แท็บหลัก ---
-    tab_assets, tab_data, tab_kw_factory, tab_flow, tab_crud = st.tabs([
-        "📚 Assets", 
-        "🗃️ Test Data",
-        "🏭 Keyword Factory", 
-        "📈 Test Flow",
-        "✨ CRUD Generator"
-    ])
+    if 'main_studio_tab_index' not in st.session_state:
+        st.session_state.main_studio_tab_index = 0
 
-    # --- 2. เนื้อหาของแท็บ Assets ---
-    with tab_assets:
+    # --- 2. สร้าง Wrapper Div เพื่อบังคับชิดซ้าย (ยังคงจำเป็น) ---
+    st.markdown("<div style='width: fit-content; max-width: 100%;'>", unsafe_allow_html=True)
+
+    selected_tab_name = option_menu(
+        menu_title=None,
+        options=tab_options_list,
+        icons=tab_icons,
+        
+        key="main_studio_tabs",
+        orientation="horizontal",
+        default_index=st.session_state.main_studio_tab_index,
+        
+        # --- 3. [ปรับ] CSS เพิ่มกรอบเส้นที่ Container ---
+        styles={
+            "container": {
+                # [ปรับ] เพิ่มกรอบเส้นและ Padding
+                "padding": "6px !important", 
+                "background-color": "transparent", # พื้นหลังโปร่งใส
+                "border": "1px solid #30363d",   # ⭐️ เพิ่มกรอบเส้นสีเทาเข้ม
+                "border-radius": "12px",           # ⭐️ เพิ่มความมน
+                "margin-bottom": "1rem",
+            },
+            "icon": {
+                "font-size": "1rem", 
+                "margin-right": "6px", 
+            },
+            "nav-link": {
+                # สไตล์ของปุ่ม "ไม่ได้เลือก" (เหมือนเดิม)
+                "font-size": "0.9rem",
+                "font-weight": "600",
+                "color": "#8b949e",
+                "background-color": "transparent",
+                "border-radius": "8px",
+                "padding": "8px 14px",
+                "transition": "all 0.3s ease",
+                "margin": "0 4px",
+            },
+            "nav-link:hover": {
+                "background-color": "rgba(48, 54, 61, 0.7)", 
+                "color": "#c9d1d9"
+            },
+            "nav-link-selected": {
+                # สไตล์ของปุ่ม "ถูกเลือก" (เหมือนเดิม)
+                "background-color": "#f85149", 
+                "color": "#ffffff",
+                "border-radius": "8px",
+            },
+            "nav-link-selected:hover": {
+                "background-color": "#6cb0ff", 
+                "color": "#ffffff",
+            }
+        }
+    )
+    
+    # --- 4. ปิด Wrapper Div ---
+    st.markdown("</div>", unsafe_allow_html=True) 
+
+    # --- 5. อัปเดต State และแสดงเนื้อหา Tab ---
+    st.session_state.main_studio_tab_index = tab_options_list.index(selected_tab_name)
+    
+    if selected_tab_name == "Assets":
         render_resources_view_new()
 
-    with tab_data:
+    elif selected_tab_name == "Test Data":
         render_test_data_tab()
 
-    with tab_kw_factory: 
+    elif selected_tab_name == "Keyword Factory":
         render_keyword_factory_tab()
 
-    with tab_flow:
+    elif selected_tab_name == "Test Flow":
         render_test_flow_tab()
 
-    with tab_crud:
+    elif selected_tab_name == "CRUD Generator":
         render_crud_generator_tab()
 
 def html_editor_dialog():
@@ -2389,18 +2479,138 @@ Resource            ../resources/commonkeywords.resource
 # MAIN APPLICATION
 # ============================================================================
 
+# ============================================================================
+# MAIN APPLICATION
+# ============================================================================
+
 def main():
     """Main application entry point"""
-    init_session_state()
+    init_session_state() # 1. เรียก Init State ก่อนเสมอ
+    
+    st.markdown(
+        '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">',
+        unsafe_allow_html=True
+    )
+
+    ws_state = st.session_state.studio_workspace
+
+    # 2. [ย้ายมา] กำหนด Callback Functions สำหรับ Dialogs ทั้งหมด
+    
+    # --- Callback สำหรับ Test Flow ---
+    def add_step_to_timeline(context_timeline_key, new_step):
+        ws_state.setdefault(context_timeline_key, []).append(new_step)
+
+    # --- Callbacks และ Filters สำหรับ CRUD ---
+    def add_step_to_crud(context_dict, new_step):
+        section_key = context_dict.get("key")
+        if section_key:
+            crud_manager.add_step(section_key, new_step)
+
+    def crud_keyword_filter(keyword):
+        kw_name = keyword.get('name', '').lower()
+        return not (kw_name.startswith('import datasource') or kw_name.startswith('request service'))
+
+    # --- Callbacks และ Filters สำหรับ Keyword Factory ---
+    def add_step_to_kw(context_dict, new_step):
+        kw_id = context_dict.get("key")
+        if kw_id:
+            if new_step.get('keyword') == 'IF Condition' and 'args' not in new_step:
+                 new_step['args'] = {'condition': ''}
+            elif new_step.get('keyword') == 'END':
+                 new_step['args'] = {}
+            kw_manager.add_step(kw_id, new_step)
+
+    def kw_factory_filter(keyword):
+        all_generated_kw_names = [kw['name'] for kw in kw_manager.get_all_keywords()]
+        kw_name = keyword.get('name', '')
+        if kw_name.lower().startswith(('import datasource', 'request service')): return False
+        if kw_name in ['IF Condition', 'ELSE IF Condition', 'ELSE', 'END']: return True
+        if kw_name in all_generated_kw_names: return False
+        return True
+
+    # 3. [สำคัญ] บล็อกสำหรับตรวจสอบและวาด Dialogs ทั้งหมด
+    
+    # --- CRUD Dialogs ---
+    if st.session_state.get('show_crud_add_dialog'):
+        render_add_step_dialog_base(
+            dialog_state_key='show_crud_add_dialog',
+            context_state_key='crud_add_dialog_context',
+            selected_kw_state_key='selected_kw_crud',
+            add_step_callback=add_step_to_crud,
+            ws_state=ws_state,
+            title=f"Add New Step to CRUD Flow",
+            keyword_filter_func=crud_keyword_filter,
+            search_state_key="kw_search_dialog_crud",
+            recently_used_state_key="recently_used_keywords_crud"
+        )
+        return  # <--- 🛑 [สำคัญมาก] ต้องมี RETURN
+
+    elif st.session_state.get('show_api_csv_dialog'): # (CRUD)
+        render_api_csv_step_dialog()
+        return  # <--- 🛑 [สำคัญมาก] ต้องมี RETURN
+        
+    elif st.session_state.get('show_fill_form_dialog'): # (CRUD)
+        render_fill_form_dialog()
+        return  # <--- 🛑 [สำคัญมาก] ต้องมี RETURN
+        
+    elif st.session_state.get('show_verify_detail_dialog'): # (CRUD)
+        render_verify_detail_dialog()
+        return  # <--- 🛑 [สำคัญมาก] ต้องมี RETURN
+
+    # --- Test Flow Dialog ---
+    elif st.session_state.get('show_add_dialog'):
+        render_add_step_dialog_base(
+            dialog_state_key='show_add_dialog',
+            context_state_key='add_dialog_timeline',
+            selected_kw_state_key='selected_kw',
+            add_step_callback=add_step_to_timeline,
+            ws_state=ws_state,
+            title=f"Add New Step to {st.session_state.get('add_dialog_section', 'Timeline')}",
+            search_state_key="kw_search_dialog_testflow",
+            recently_used_state_key="recently_used_keywords"
+        )
+        return  # <--- 🛑 [สำคัญมาก] ต้องมี RETURN
+
+    # --- Keyword Factory Dialogs ---
+    elif st.session_state.get('show_kw_factory_add_dialog'):
+        render_add_step_dialog_base(
+            dialog_state_key='show_kw_factory_add_dialog',
+            context_state_key='kw_factory_add_dialog_context',
+            selected_kw_state_key='selected_kw_kw_factory',
+            add_step_callback=add_step_to_kw,
+            ws_state=ws_state,
+            title=f"Add Step to Keyword",
+            keyword_filter_func=kw_factory_filter,
+            search_state_key="kw_search_dialog_kw_factory",
+            recently_used_state_key="recently_used_keywords_kw_factory",
+        )
+        return  # <--- 🛑 [สำคัญมาก] ต้องมี RETURN
+        
+    elif st.session_state.get('show_kw_factory_fill_form_dialog'):
+        render_kw_factory_fill_form_dialog()
+        return  # <--- 🛑 [สำคัญมาก] ต้องมี RETURN
+        
+    elif st.session_state.get('show_kw_factory_verify_dialog'):
+        render_kw_factory_verify_detail_dialog()
+        return  # <--- 🛑 [สำคัญมาก] ต้องมี RETURN
+        
+    elif st.session_state.get('show_kw_factory_api_csv_dialog'):
+        render_kw_factory_api_csv_step_dialog()
+        return  # <--- 🛑 [สำคัญมาก] ต้องมี RETURN
+
+    # --- Studio Dialog (จาก app.py) ---
+    elif ws_state.get('show_csv_creator'):
+        csv_creator_dialog() # (ฟังก์ชันนี้อยู่ใน app.py อยู่แล้ว)
+        return  # <--- 🛑 [สำคัญมาก] ต้องมี RETURN
+
+    # 4. ถ้าไม่มี Dialog ไหนเปิดอยู่ ให้วาดหน้าหลักตามปกติ
     render_sidebar()
     render_header()
     
     if not PARSER_AVAILABLE:
         st.error("HTML Parser module not available. Please check installation."); return
 
-    # --- ลบ st.tabs ออก และเรียกใช้ render_studio_tab() โดยตรง ---
-    render_studio_tab()
+    render_studio_tab() # <-- เรียก Tab UI (ซึ่งตอนนี้ไม่มี Dialog แฝง)
 
 if __name__ == "__main__":
     main()
-
