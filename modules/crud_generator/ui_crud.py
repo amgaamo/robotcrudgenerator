@@ -108,7 +108,7 @@ def render_crud_generator_tab_improved():
     header_left, header_right = st.columns([0.6, 0.4], gap="large")
     
     with header_left:
-        st.markdown("<h3 style='font-size: 1.6rem;'>🎯 CRUD Test Generator</h3>", unsafe_allow_html=True)
+        st.markdown("#### 🎯 CRUD Test Generator", unsafe_allow_html=True)
         st.caption("Organize your test by phases: Setup → Actions → Verification → Teardown")
     
     with header_right:

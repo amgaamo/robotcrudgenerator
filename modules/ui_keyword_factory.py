@@ -42,14 +42,12 @@ def render_keyword_list_view(ws):
     """
     Displays the list of all created keywords and a button to create new ones.
     """
-    st.markdown("<h3 style='font-size: 1.6rem;'>🏭 Keyword Factory</h3>", unsafe_allow_html=True)
+    st.markdown("#### 🏭 Keyword Factory", unsafe_allow_html=True)
     st.caption("Create and manage reusable, high-level keywords from smaller steps.")
 
     if st.button("➕ Create New Keyword", width='content', type="secondary"):
         kw_manager.create_new_keyword()
         st.rerun()
-
-    st.markdown("---")
 
     all_keywords = kw_manager.get_all_keywords()
 

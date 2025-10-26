@@ -427,7 +427,7 @@ def render_header():
         </p>
         <p style='color: var(--text-dark); font-size: 0.85rem; margin-top: 0.3rem;'>
             Save hours of manual coding with intelligent HTML parsing and template generation
-        </p>
+        </p><br><br>
     </div>
     """
     st.markdown(header_html, unsafe_allow_html=True)
@@ -1840,11 +1840,6 @@ def render_studio_tab():
     Renders the "Studio Workspace"
     (FIXED V10: Added border to container for visibility)
     """
-    st.markdown(
-        "### <br><br><i class='bi bi-robot'></i> Studio Workspace", 
-        unsafe_allow_html=True
-    )
-    st.caption("A visual editor to build your complete Robot Framework test script.")
 
     # --- 1. กำหนด options และ icons ---
     
@@ -1862,7 +1857,7 @@ def render_studio_tab():
         "gear-wide-connected",
         "kanban",
         "rocket-takeoff"
-    ]
+    ]   
 
     if 'main_studio_tab_index' not in st.session_state:
         st.session_state.main_studio_tab_index = 0
@@ -1924,6 +1919,13 @@ def render_studio_tab():
     # --- 4. ปิด Wrapper Div ---
     st.markdown("</div>", unsafe_allow_html=True) 
 
+    st.markdown(
+        "## <br><i class='bi bi-robot'></i> Studio Workspace", 
+        unsafe_allow_html=True
+    )
+    st.caption("A visual editor to build your complete Robot Framework test script.")
+    st.markdown("---")
+    
     # --- 5. อัปเดต State และแสดงเนื้อหา Tab ---
     st.session_state.main_studio_tab_index = tab_options_list.index(selected_tab_name)
     

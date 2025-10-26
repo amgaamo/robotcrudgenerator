@@ -1032,7 +1032,7 @@ def get_css():
                 padding: var(--spacing-md);
             }
             
-            .main h1 { font-size: 2rem; }
+            .main h1 { font-size: 2.5rem; }
             .main h2 { font-size: 1.5rem; }
             .main h3 { font-size: 1.25rem; }
             
