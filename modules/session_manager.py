@@ -107,7 +107,8 @@ def init_session_state():
                 'action': [],
                 'verification': [],
                 'teardown': []
-            }
+            },
+            'keyword_factory_keywords': []
         }
     # ===== END: สิ้นสุดส่วนที่เพิ่ม =====
 

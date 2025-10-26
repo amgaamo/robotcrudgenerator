@@ -43,6 +43,30 @@ def _get_assets():
         st.session_state.studio_workspace = {}
     return st.session_state.studio_workspace.get('keywords', []), st.session_state.studio_workspace.get('locators', [])
 
+def sync_keyword_factory_keywords():
+    """
+    Sync keywords from Keyword Factory to CRUD workspace
+    This allows CRUD Generator to use custom keywords from Keyword Factory
+    """
+    from .. import kw_manager
+    
+    # Get all keywords from Keyword Factory
+    factory_keywords = kw_manager.get_all_keywords()
+    
+    # Store in CRUD workspace
+    ws = _get_workspace()
+    ws['keyword_factory_keywords'] = factory_keywords
+    _save_workspace()
+    
+    return len(factory_keywords)
+
+def get_keyword_factory_keywords():
+    """
+    Get keywords from Keyword Factory that are stored in CRUD workspace
+    """
+    ws = _get_workspace()
+    return ws.get('keyword_factory_keywords', [])
+
 def get_csv_headers(csv_filename):
     """
     (Refactored) Reads headers by calling the pure utility function
@@ -287,6 +311,34 @@ def _format_arguments_for_script(keyword, args):
             args_list.append(f"select_attribute={args.get('select_attribute')}")
         return args_list
     # --- ✅✅✅ END: NEW LOGIC ---
+
+    # --- ✅✅✅ START: Logic สำหรับ Keyword Factory keywords ---
+    # Check if this is a keyword from Keyword Factory
+    factory_keywords = get_keyword_factory_keywords()
+    is_factory_keyword = any(kw['name'] == keyword for kw in factory_keywords)
+    
+    if is_factory_keyword:
+        # For Keyword Factory keywords, format arguments based on their definition
+        factory_kw = next((kw for kw in factory_keywords if kw['name'] == keyword), None)
+        if factory_kw:
+            for arg_def in factory_kw.get('args', []):
+                arg_name = arg_def.get('name', '')
+                if arg_name in args:
+                    value = args[arg_name]
+                    
+                    # Handle empty values
+                    if str(value).strip() == "":
+                        formatted_value = "${EMPTY}"
+                    # Handle variable syntax
+                    elif str(value).startswith('${'):
+                        formatted_value = value
+                    # Handle plain text
+                    else:
+                        formatted_value = value
+                    
+                    args_list.append(f"{arg_name}={formatted_value}")
+            return args_list
+    # --- ✅✅✅ END: Logic สำหรับ Keyword Factory keywords ---
 
     # --- Logic ทั่วไปสำหรับ Keywords อื่นๆ ---
     for name, value in args.items():

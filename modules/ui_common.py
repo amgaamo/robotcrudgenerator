@@ -620,6 +620,8 @@ def render_step_card_compact(step, index, section_key, ws, manager_module, card_
     real_section_key = section_key
     ws_state = st.session_state.studio_workspace
 
+    global ARGUMENT_PRESETS, ARGUMENT_PATTERNS
+
     # --- Logic to handle 'virtual' section keys ---
     if section_key == 'action_detail_others':
         real_section_key = 'action_detail'
@@ -642,7 +644,6 @@ def render_step_card_compact(step, index, section_key, ws, manager_module, card_
         real_index = next(i for i, s in enumerate(original_list) if s['id'] == step['id'])
         total_steps_in_original = len(original_list)
     except StopIteration:
-        st.error(f"Debug: Step ID {step['id']} not found in original list {real_section_key}")
         real_index = index
         total_steps_in_original = len(original_list) if original_list else 0
 
@@ -766,14 +767,33 @@ def render_step_card_compact(step, index, section_key, ws, manager_module, card_
         if 'categorized_keywords' not in ws_state:
             all_keywords_list = ws_state.get('keywords', [])
             if all_keywords_list:
-                from .keyword_categorizer import categorize_keywords # Import locally if needed
+                from .keyword_categorizer import categorize_keywords
                 ws_state['categorized_keywords'] = categorize_keywords(all_keywords_list)
 
         categorized_keywords = ws_state.get('categorized_keywords', {})
-        all_kws = [kw for kws in categorized_keywords.values() for kw in kws]
+        
+        # ✅ Smart Filter: ตรวจสอบประเภทของ step ที่กำลัง edit
+        step_type = step.get('type', 'common')  # default เป็น common
+        
+        if step_type == 'keyword_factory' and card_prefix == "crud":
+            # ถ้า step เป็น Keyword Factory → แสดงเฉพาะ Keyword Factory keywords
+            crud_ws = st.session_state.get('crud_generator_workspace', {})
+            all_kws = crud_ws.get('keyword_factory_keywords', [])
+            keyword_source = "Keyword Factory"
+        else:
+            # ถ้า step เป็น Common Keyword → แสดงเฉพาะ Common keywords
+            all_kws = [kw for kws in categorized_keywords.values() for kw in kws]
+            keyword_source = "Common Keywords"
+        
         all_kw_names = [kw['name'] for kw in all_kws]
 
         st.markdown("##### 🔧 Edit Step")
+        
+        # แสดง badge บอกประเภทของ keywords ที่แสดง
+        if step_type == 'keyword_factory':
+            st.caption("🏭 Editing Keyword Factory Keyword")
+        else:
+            st.caption("📝 Editing Common Keyword")
 
         # --- Keyword Selector ---
         current_kw_name = step.get('keyword', '')
@@ -781,10 +801,19 @@ def render_step_card_compact(step, index, section_key, ws, manager_module, card_
         if edit_kw_state_key not in st.session_state:
             st.session_state[edit_kw_state_key] = current_kw_name
 
+        # ตรวจสอบว่า keyword ปัจจุบันอยู่ใน list หรือไม่
+        try:
+            current_index = all_kw_names.index(st.session_state[edit_kw_state_key])
+        except ValueError:
+            current_index = 0
+            # ถ้าหาไม่เจอ ให้ reset เป็น keyword แรก
+            if all_kw_names:
+                st.session_state[edit_kw_state_key] = all_kw_names[0]
+
         selected_kw_name = st.selectbox(
-            "Select Keyword",
+            f"Select Keyword ({keyword_source})",
             all_kw_names,
-            index=all_kw_names.index(st.session_state[edit_kw_state_key]) if st.session_state[edit_kw_state_key] in all_kw_names else 0,
+            index=current_index,
             key=edit_kw_state_key
         )
         selected_kw = next((kw for kw in all_kws if kw['name'] == selected_kw_name), None)
@@ -835,7 +864,6 @@ def render_step_card_compact(step, index, section_key, ws, manager_module, card_
                         for arg_item in selected_kw.get('args', []):
                             arg_name = arg_item.get('name', '').strip('${}')
                             is_locator = any(s in arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'menu'])
-                            from ..ui_common import ARGUMENT_PRESETS # Import locally if needed
                             is_preset = arg_name in ARGUMENT_PRESETS
                             if not is_locator and not is_preset:
                                 text_args.append(arg_name)
@@ -943,7 +971,6 @@ def render_step_card_compact(step, index, section_key, ws, manager_module, card_
 
                 # ✅ Render input
                 # Import necessary functions/variables if not already done at top level
-                from ..ui_common import render_argument_input, ARGUMENT_PRESETS, ARGUMENT_PATTERNS
                 rendered_value = render_argument_input(
                     arg_info,
                     ws_state,

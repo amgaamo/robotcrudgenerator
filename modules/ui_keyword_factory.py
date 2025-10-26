@@ -119,9 +119,6 @@ def render_keyword_editor_view(ws):
                 on_change=lambda: kw_manager.update_keyword_details(
                     keyword_id,
                     st.session_state[f"kw_name_{keyword_id}"],
-                    st.session_state[f"kw_doc_{keyword_id}"],
-                    # Args removed from here
-                    st.session_state[f"kw_tags_{keyword_id}"]
                 )
             )
             # ***** End Keyword Name *****

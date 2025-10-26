@@ -57,15 +57,11 @@ def delete_keyword(keyword_id):
         ws['active_keyword_id'] = None
 
 # --- *** CORRECTED: update_keyword_details *** ---
-def update_keyword_details(keyword_id, name, doc, tags_str): # Removed args_str
+def update_keyword_details(keyword_id, name): # Removed args_str
     """Updates ONLY the name, documentation, and tags of a keyword."""
     kw = get_keyword(keyword_id)
     if kw:
         kw['name'] = name
-        kw['doc'] = doc
-        # Removed args update logic from here
-        kw['tags'] = [tag.strip() for tag in tags_str.split(',') if tag.strip()]
-        # kw['args'] is now updated directly by the UI
 
 # --- Step Management (No changes needed in add, delete, move) ---
 def add_step(keyword_id, new_step):

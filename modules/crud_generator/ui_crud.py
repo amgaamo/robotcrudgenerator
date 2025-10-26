@@ -8,12 +8,11 @@ import numpy as np
 import json
 import os 
 import re
+import uuid
 from . import manager
 from ..session_manager import get_clean_locator_name
-from ..ui_common import render_argument_input
+from ..ui_common import render_argument_input, render_step_card_compact, extract_csv_datasource_keywords, ARGUMENT_PRESETS
 from ..dialog_commonkw import render_add_step_dialog_base
-from ..ui_common import render_step_card_compact
-from ..ui_common import extract_csv_datasource_keywords
 from ..utils import format_args_as_string
 
 # ======= ENTRY POINT FUNCTION =======
@@ -86,6 +85,9 @@ def render_crud_generator_tab_improved():
     ws = manager._get_workspace()
     ws_state = st.session_state.studio_workspace
 
+    # ✅ Sync keywords from Keyword Factory
+    num_factory_kw = manager.sync_keyword_factory_keywords()
+
     # ✅ ตรวจสอบและสร้างโครงสร้าง steps หากยังไม่มี
     if "steps" not in ws:
         ws["steps"] = {}
@@ -133,21 +135,42 @@ def render_crud_generator_tab_improved():
 
             st.markdown("---")
 
-            # --- 4.2 Tabs (Top Navigation) ---
-            tab_setup, tab_actions, tab_verify, tab_teardown = st.tabs([
-                "🛠️ Phase 1: Setup",
-                "⚡ Phase 2: Actions & Fill Form",
-                "✅ Phase 3: Verification",
-                "🧹 Phase 4: Teardown"
-            ])
+            # --- 4.2 Phase Navigation (Buttons แทน Tabs) ---
+            if 'crud_active_phase' not in st.session_state:
+                st.session_state.crud_active_phase = 'actions'
 
-            with tab_setup:
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                if st.button("🛠️ 1. Setup", use_container_width=True,
+                        type="primary" if st.session_state.crud_active_phase == 'setup' else "secondary"):
+                    st.session_state.crud_active_phase = 'setup'
+                    st.rerun()
+            with col2:
+                if st.button("⚡ 2. Actions", use_container_width=True,
+                        type="primary" if st.session_state.crud_active_phase == 'actions' else "secondary"):
+                    st.session_state.crud_active_phase = 'actions'
+                    st.rerun()
+            with col3:
+                if st.button("✅ 3. Verify", use_container_width=True,
+                        type="primary" if st.session_state.crud_active_phase == 'verify' else "secondary"):
+                    st.session_state.crud_active_phase = 'verify'
+                    st.rerun()
+            with col4:
+                if st.button("🧹 4. Teardown", use_container_width=True,
+                        type="primary" if st.session_state.crud_active_phase == 'teardown' else "secondary"):
+                    st.session_state.crud_active_phase = 'teardown'
+                    st.rerun()
+
+            st.markdown("---")
+
+            # Render phase ตาม state
+            if st.session_state.crud_active_phase == 'setup':
                 render_setup_phase(ws)
-            with tab_actions:
+            elif st.session_state.crud_active_phase == 'actions':
                 render_actions_phase(ws)
-            with tab_verify:
+            elif st.session_state.crud_active_phase == 'verify':
                 render_verification_phase(ws)
-            with tab_teardown:
+            elif st.session_state.crud_active_phase == 'teardown':
                 render_teardown_phase(ws)
 
         else:
@@ -294,6 +317,9 @@ def render_config_section_v3_8(ws, ws_state):
         value=", ".join(ws.get('tags', default_tags))
     )
     ws['tags'] = [tag.strip() for tag in tags_input.split(',') if tag.strip()]
+    num_factory_kw = len(ws.get('keyword_factory_keywords', []))
+    if num_factory_kw > 0:
+        st.info(f"🏭 {num_factory_kw} custom keyword(s) available from Keyword Factory")
 
 # --- Sections updated to include the "Add API/CSV Step" button ---
 def render_suite_setup_section(ws):
@@ -367,21 +393,59 @@ def render_list_actions_section(ws):
             _open_api_csv_dialog("action_list")
 
 def render_fill_form_section(ws):
-    """Fill Form Section - Preview Removed"""
-    st.markdown("#### ✏️ Fill Form Fields")
+    """Fill Form Section - Manual step addition"""
+    with st.container(key="fill_form_container"):
+        st.markdown("#### ✏️ Fill Form Fields")
+        st.caption("Add fill steps manually or import from Keyword Factory")
 
-    fill_steps = [s for s in ws['steps']['action_detail'] if s['keyword'] == 'Fill in data form']
+    # ✅ ดึง steps ทั้งหมดจาก action_detail
+    all_action_steps = ws['steps'].get('action_detail', [])
+    
+    # ✅ กรองเฉพาะ steps ที่ไม่ใช่ navigation buttons
+    excluded_keywords = [
+        'Click button on detail page',
+        'Click Modal Button'
+    ]
+    
+    fill_steps = [
+        s for s in all_action_steps 
+        if s.get('keyword', '') not in excluded_keywords
+    ]
 
-    col1, col2 = st.columns([0.7, 0.3])
+    if not fill_steps:
+        st.info("No fill steps yet. Click 'Add Fill Step' or 'Import from Keyword Factory' below.")
+    else:
+        # แสดง badge แยกประเภท
+        num_common = sum(1 for s in fill_steps if s.get('type') != 'keyword_factory')
+        num_factory = sum(1 for s in fill_steps if s.get('type') == 'keyword_factory')
+        
+        # แสดง steps
+        for i, step in enumerate(fill_steps):
+            
+            render_step_card_compact(step, i, 'action_detail', ws, manager, card_prefix="crud")
+
+    # Buttons row
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("📝 Total Form Fields", len(fill_steps))
-    with col2:
-        if st.button("⚙️ Manage All", use_container_width=True, type="primary", key="manage_form"):
-            st.session_state.show_fill_form_dialog = True
+        if st.button("➕ Add Fill Step", use_container_width=True, key="add_fill_step"):
+            _save_current_tab_state()
+            st.session_state['show_crud_add_dialog'] = True
+            st.session_state['crud_add_dialog_context'] = {"key": "action_detail", "filter": "fill"}
             st.rerun()
-
-    if fill_steps:
-        st.caption("Click 'Manage All' to edit all fields at once")
+    with col2:
+        if st.button("⚡ Add CSV Import", use_container_width=True, key="crud_add_csv_fill"):
+            _save_current_tab_state()
+            _open_api_csv_dialog("action_detail")
+    with col3:
+        if st.button("🔌 Add API Call", use_container_width=True, key="crud_add_api_fill"):
+            _save_current_tab_state()
+            _open_api_csv_dialog("action_detail")
+    with col4:
+        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_fill"):
+            _save_current_tab_state()
+            st.session_state['show_kw_factory_dialog'] = True
+            st.session_state['kw_factory_dialog_context'] = {"key": "action_detail"}
+            st.rerun()
 
 def render_detail_actions_section(ws):
     """Detail Actions Section"""
@@ -399,11 +463,13 @@ def render_detail_actions_section(ws):
     col1, col2 = st.columns(2)
     with col1:
         if st.button("➕ Add Detail Action Step", use_container_width=True, key="add_action_detail"):
+            _save_current_tab_state()
             st.session_state['show_crud_add_dialog'] = True
             st.session_state['crud_add_dialog_context'] = {"key": "action_detail"}
             st.rerun()
     with col2:
         if st.button("⚡ Add API/CSV Step", use_container_width=True, key="crud_add_api_csv_action_detail"):
+            _save_current_tab_state()
             _open_api_csv_dialog("action_detail")
 
 def render_verify_list_section(ws):
@@ -436,26 +502,42 @@ def render_verify_list_section(ws):
             _open_api_csv_dialog("verify_list")
 
 def render_verify_detail_section(ws):
-    """Verify Detail Section - Preview Removed"""
+    """Verify Detail Section - Manual step addition"""
     st.markdown("#### 🔍 Verify Detail Page")
-    st.info("💡 Check if data in detail page matches what you entered")
+    st.caption("Add verify steps manually or import from Keyword Factory")
 
     verify_steps = [s for s in ws['steps']['verify_detail'] if s['keyword'] == 'Verify data form']
-
-    col1, col2 = st.columns([0.7, 0.3])
-    with col1:
-        st.metric("🔍 Fields to Verify", len(verify_steps))
-    with col2:
-        if st.button("⚙️ Manage All", use_container_width=True, type="primary", key="manage_verify"):
-            st.session_state.show_verify_detail_dialog = True
-            st.rerun()
-
     other_steps = [s for s in ws['steps']['verify_detail'] if s['keyword'] != 'Verify data form']
+
+    # Display verify steps
+    if verify_steps:
+        st.markdown("##### Verification Steps")
+        for i, step in enumerate(verify_steps):
+            render_step_card_compact(step, i, 'verify_detail_verify', ws, manager, card_prefix="crud")
+    
+    # Display other navigation steps
     if other_steps:
         st.markdown("---")
         st.markdown("##### Navigation Steps")
         for i, step in enumerate(other_steps):
             render_step_card_compact(step, i, 'verify_detail_others', ws, manager, card_prefix="crud")
+
+    if not verify_steps and not other_steps:
+        st.info("No verify steps yet. Click 'Add Verify Step' or 'Import from Keyword Factory' below.")
+
+    # Buttons row
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("➕ Add Verify Step", use_container_width=True, key="add_verify_step"):
+            st.session_state['show_crud_add_dialog'] = True
+            st.session_state['crud_add_dialog_context'] = {"key": "verify_detail", "filter": "verify"}
+            st.rerun()
+    with col2:
+        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_verify"):
+            st.session_state['show_kw_factory_dialog'] = True
+            st.session_state['kw_factory_dialog_context'] = {"key": "verify_detail"}
+            st.rerun()
 
 def render_teardown_section(ws):
     """Teardown Section"""
@@ -647,6 +729,8 @@ def render_api_csv_step_dialog():
             del st.session_state['api_csv_dialog_context']
         if 'csv_api_dialog_selection' in st.session_state:
             del st.session_state['csv_api_dialog_selection']
+
+        _restore_tab_state()
         st.rerun()
 
     # --- Back Button (Top Left) ---
@@ -787,8 +871,385 @@ def render_api_csv_step_dialog():
                 close_dialog() # Close after adding
 
 
+# ======= DIALOG: Import from Keyword Factory =======
+@st.dialog("Import Keyword from Keyword Factory", width="large", dismissible=False)
+def render_kw_factory_import_dialog():
+    
+    # Inject CSS
+    st.markdown("""
+    <style>
+        .keyword-column {
+            background: linear-gradient(145deg, #2d333b, #22272e);
+            border: 1px solid #444c56;
+            border-left: 3px solid #539bf5;
+            border-radius: 8px;
+            padding: 1.5rem;
+            height: 70vh;
+            overflow-y: auto;
+        }
+        
+        .config-column {
+            background: linear-gradient(145deg, #2d333b, #22272e);
+            border: 1px solid #444c56;
+            border-left: 3px solid #768390;
+            border-radius: 8px;
+            padding: 1.5rem;
+            height: 70vh;
+            overflow-y: auto;
+        }
+        
+        .keyword-button {
+            width: 100%;
+            text-align: left !important;
+            padding: 0.75rem 1rem !important;
+            margin-bottom: 0.5rem;
+            background: #161b22 !important;
+            border: 1px solid #30363d !important;
+            border-radius: 6px !important;
+            transition: all 0.2s ease !important;
+        }
+        
+        .keyword-button:hover {
+            background: #1f2937 !important;
+            border-color: #539bf5 !important;
+            transform: translateX(4px);
+        }
+        
+        .keyword-button-selected {
+            background: linear-gradient(135deg, #1f4788, #0d2d5e) !important;
+            border-color: #539bf5 !important;
+            border-left: 3px solid #539bf5 !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    context = st.session_state.get('kw_factory_dialog_context', {})
+    section_key = context.get("key")
+
+    if not section_key:
+        st.error("Error: Section context not found.")
+        st.session_state['show_kw_factory_dialog'] = False
+        st.rerun()
+        return
+
+    # Get Keyword Factory keywords and workspace
+    ws = st.session_state.crud_generator_workspace
+    ws_state = st.session_state.studio_workspace
+    factory_keywords = ws.get('keyword_factory_keywords', [])
+
+    # Initialize selection state
+    if 'selected_factory_kw' not in st.session_state:
+        st.session_state.selected_factory_kw = None
+    
+    selected_kw = st.session_state.selected_factory_kw
+    
+    # ✅ เคลียร์ค่าเก่าทุกครั้งที่เปิด dialog ใหม่
+    if 'kw_factory_dialog_initialized' not in st.session_state:
+        # เคลียร์ argument widget keys ทั้งหมด
+        keys_to_clear = [key for key in st.session_state.keys() 
+                        if key.startswith('kw_factory_arg_')]
+        for key in keys_to_clear:
+            del st.session_state[key]
+        
+        # เคลียร์ CSV quick insert keys
+        csv_keys = [
+            'quick_csv_ds_kw_factory',
+            'quick_csv_row_kw_factory', 
+            'quick_csv_col_kw_factory',
+            'quick_csv_target_kw_factory'
+        ]
+        for key in csv_keys:
+            if key in st.session_state:
+                del st.session_state[key]
+        
+        st.session_state['kw_factory_dialog_initialized'] = True
+
+    # Cleanup function
+    def close_dialog():
+        st.session_state['show_kw_factory_dialog'] = False
+        if 'kw_factory_dialog_context' in st.session_state:
+            del st.session_state['kw_factory_dialog_context']
+        if 'selected_factory_kw' in st.session_state:
+            del st.session_state['selected_factory_kw']
+        
+        # ✅ Reset initialization flag
+        if 'kw_factory_dialog_initialized' in st.session_state:
+            del st.session_state['kw_factory_dialog_initialized']
+        
+        # Clean up form inputs - เคลียร์ทั้งหมด
+        keys_to_clear = [key for key in st.session_state.keys() 
+                        if key.startswith('kw_factory_arg_')]
+        for key in keys_to_clear:
+            del st.session_state[key]
+        
+        # ✅ เคลียร์ CSV keys
+        csv_keys = [
+            'quick_csv_ds_kw_factory',
+            'quick_csv_row_kw_factory',
+            'quick_csv_col_kw_factory',
+            'quick_csv_target_kw_factory',
+            'quick_csv_insert_btn_kw_factory'
+        ]
+        for key in csv_keys:
+            if key in st.session_state:
+                del st.session_state[key]
+        
+        st.rerun()
+
+    # Back Button
+    if st.button("← Back to Workspace", key="back_kw_factory", type="primary"):
+        close_dialog()
+    
+    st.markdown("<div style='margin-bottom: 1rem;'></div>", unsafe_allow_html=True)
+
+    # Check if there are any keywords
+    if not factory_keywords:
+        st.info("🏭 No custom keywords found in Keyword Factory yet.")
+        st.markdown("---")
+        if st.button("❌ Close", use_container_width=True):
+            close_dialog()
+        return
+
+    # Two Column Layout
+    left_col, right_col = st.columns([0.45, 0.55], gap="medium")
+
+    # ========== LEFT COLUMN: Keyword Selection ==========
+    with left_col:
+        st.markdown("### 🔍 Select Keyword")
+        
+        # Search
+        search_query = st.text_input(
+            "Search", 
+            key="search_factory_kw",
+            placeholder="🔎 Type to filter keywords...",
+            label_visibility="collapsed"
+        ).lower()
+
+        st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
+
+        # Filter keywords
+        filtered_keywords = [
+            kw for kw in factory_keywords 
+            if search_query in kw.get('name', '').lower()
+        ]
+
+        if not filtered_keywords:
+            st.warning(f"No keywords found matching '{search_query}'")
+        else:           
+            for kw in filtered_keywords:
+                kw_name = kw.get('name', 'Untitled Keyword')
+                kw_id = kw.get('id', kw_name)
+                kw_args = kw.get('args', [])
+                
+                # Check if selected
+                is_selected = selected_kw and selected_kw.get('id') == kw_id
+                
+                # Keyword button with visual feedback
+                col1, col2 = st.columns([0.85, 0.15])
+                with col1:
+                    button_label = f"🔧 {kw_name}"
+                with col2:
+                    if kw_args:
+                        st.caption(f"{len(kw_args)} args")
+                
+                # Button with selected state
+                button_type = "primary" if is_selected else "secondary"
+                if st.button(
+                    button_label,
+                    key=f"select_kw_{kw_id}",
+                    use_container_width=True,
+                    type=button_type
+                ):
+                    st.session_state.selected_factory_kw = kw
+                    st.rerun()
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    # ========== RIGHT COLUMN: Configuration ==========
+    with right_col:
+        st.markdown("### ⚙️ Configure Arguments")
+        
+        if not selected_kw:
+            st.info("👈 Select a keyword from the left to configure its arguments")
+        else:
+            # Display keyword info
+            st.markdown(f"**Selected:** `{selected_kw.get('name')}`")
+            
+            # Display keyword info
+            st.markdown(f"**Selected:** `{selected_kw.get('name')}`")
+            kw_doc = selected_kw.get('doc', '')
+            if kw_doc:
+                st.caption(kw_doc)
+            
+            st.markdown("---")
+            
+            kw_args = selected_kw.get('args', [])
+            
+            if not kw_args:
+                st.info("ℹ️ This keyword has no arguments")
+            else:
+                st.markdown(f"**Arguments ({len(kw_args)}):**")
+                st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
+                
+                # CSV Quick Insert
+                csv_keywords = extract_csv_datasource_keywords(ws_state)
+                if csv_keywords and kw_args:
+                    with st.expander("📊 Quick Insert from CSV Data", expanded=False):
+                        st.caption("Insert CSV value into a specific argument")
+                        
+                        col_ds, col_row, col_column, col_target = st.columns([2, 2, 2, 2])
+                        
+                        quick_ds = None
+                        with col_ds:
+                            quick_ds = st.selectbox(
+                                "Data Source",
+                                options=list(csv_keywords.keys()),
+                                key="quick_csv_ds_kw_factory"
+                            )
+                        
+                        quick_row_val = ""
+                        with col_row:
+                            quick_row_val = st.text_input(
+                                "Row Key",
+                                key="quick_csv_row_kw_factory",
+                                placeholder="e.g., robotapi"
+                            )
+                        
+                        quick_col = None
+                        headers = []
+                        if quick_ds:
+                            ds_info = csv_keywords.get(quick_ds, {})
+                            headers = ds_info.get('headers', [])
+                            
+                            if headers:
+                                with col_column:
+                                    if len(headers) > 1:
+                                        quick_col = st.selectbox(
+                                            "Column",
+                                            options=headers[1:],
+                                            key="quick_csv_col_kw_factory"
+                                        )
+                        
+                        target_arg = None
+                        with col_target:
+                            # Get all text arguments (not locators, not presets)
+                            text_args = []
+                            for arg in kw_args:
+                                arg_name = arg.get('name', '').strip('${}')
+                                is_locator = any(s in arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'menu'])
+                                is_preset = arg_name in ARGUMENT_PRESETS
+                                if not is_locator and not is_preset:
+                                    text_args.append(arg_name)
+                            
+                            if text_args:
+                                target_arg = st.selectbox(
+                                    "Insert to →",
+                                    options=text_args,
+                                    key="quick_csv_target_kw_factory"
+                                )
+                            else:
+                                st.caption("_No text args_")
+                        
+                        # Generate insert syntax
+                        if quick_ds and target_arg:
+                            ds_info = csv_keywords.get(quick_ds, {})
+                            ds_var = ds_info.get('ds_var', 'DATA')
+                            col_var = ds_info.get('col_var', 'COL')
+                            
+                            insert_syntax = ""
+                            if quick_row_val:
+                                if len(headers) > 1 and quick_col:
+                                    insert_syntax = f"${{{ds_var}['{quick_row_val}'][${{{col_var}.{quick_col}}}]}}"
+                                else:
+                                    insert_syntax = f"${{{ds_var}['{quick_row_val}']}}"
+                            
+                            # Insert button
+                            if st.button("✅ Insert", type="primary", use_container_width=True, 
+                                        key="quick_csv_insert_btn_kw_factory"):
+                                if not target_arg:
+                                    st.warning("Please select a target argument 'Insert to →'")
+                                elif not quick_row_val:
+                                    st.warning("Please enter a 'Row Key'")
+                                elif insert_syntax:
+                                    # Insert into session_state
+                                    for i, arg in enumerate(kw_args):
+                                        arg_name = arg.get('name', '').strip('${}')
+                                        if arg_name == target_arg:
+                                            key = f"kw_factory_arg_{selected_kw['id']}_{arg_name}_{i}"
+                                            st.session_state[key] = insert_syntax
+                                            st.toast(f"✅ Inserted '{insert_syntax}' into '{target_arg}'", icon="✅")
+                                            st.rerun()
+                                            break
+                elif csv_keywords and not kw_args:
+                    st.info("This keyword has no arguments.")
+                
+                if csv_keywords:
+                    st.markdown("---")
+                
+                # Render argument inputs
+                for i, arg in enumerate(kw_args):
+                    # Copy arg to avoid mutating original
+                    arg_info = arg.copy() if isinstance(arg, dict) else {'name': str(arg), 'default': ''}
+                    arg_name = arg_info.get('name', f'arg_{i}')
+                    
+                    # Clean argument name
+                    clean_arg_name = arg_name.strip('${}')
+                    arg_info['name'] = clean_arg_name
+                    
+                    # Generate unique key
+                    key = f"kw_factory_arg_{selected_kw['id']}_{clean_arg_name}_{i}"
+                    
+                    # Get current value from session_state (this is the key part!)
+                    current_value_in_state = st.session_state.get(key)
+                    
+                    # ✅ Update arg_info['default'] with value from session_state
+                    if current_value_in_state is not None:
+                        arg_info['default'] = current_value_in_state
+                    
+                    # Render input
+                    render_argument_input(
+                        arg_info=arg_info,
+                        ws_state=ws_state,
+                        unique_key_prefix=key,
+                        current_value=current_value_in_state,
+                        selected_kw_name=selected_kw.get('name')
+                    )
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Add button at bottom
+            st.markdown("---")
+            if st.button(
+                f"✅ Import '{selected_kw.get('name')}'",
+                type="primary",
+                use_container_width=True,
+                key="import_kw_factory_btn"
+            ):
+                # Collect argument values
+                args_dict = {}
+                for i, arg in enumerate(kw_args):
+                    arg_name = arg.get('name', '')
+                    key = f"kw_factory_arg_{selected_kw['id']}_{arg_name}_{i}"
+                    args_dict[arg_name] = st.session_state.get(key, '')
+                
+                # Create step
+                new_step = {
+                    "id": str(uuid.uuid4()),
+                    "keyword": selected_kw.get('name'),
+                    "args": args_dict,
+                    "type": "keyword_factory"
+                }
+                
+                # Add step
+                manager.add_step(section_key, new_step)
+                
+                # ✅ แสดง success แล้วปิด dialog (ไม่ sleep)
+                st.success(f"✅ Imported '{selected_kw.get('name')}' successfully!")
+                
+                # ✅ ปิด dialog และ rerun
+                close_dialog()
+
 # ======= DIALOG: Fill Form =======
-# ======= DIALOG: Fill Form (FIXED - No Pending Logic) =======
 @st.dialog("จัดการฟอร์มทั้งหมด (Fill Form Fields)", width="large")
 def render_fill_form_dialog():
     """FIXED: ใช้ปุ่มธรรมดา + rerun แทน pending logic"""
@@ -1547,3 +2008,27 @@ def inject_hybrid_css():
         .stAlert { border-radius: 8px; border-left: 4px solid; }
     </style>
     """, unsafe_allow_html=True)
+
+def _save_current_tab_state():
+    """บันทึก tab และ sub-section state ปัจจุบัน"""
+    # บันทึก sub-sections ทุก phase
+    if 'setup_active_sub' in st.session_state:
+        st.session_state['saved_setup_sub'] = st.session_state['setup_active_sub']
+    if 'actions_active_sub' in st.session_state:
+        st.session_state['saved_actions_sub'] = st.session_state['actions_active_sub']
+    if 'verify_active_sub' in st.session_state:
+        st.session_state['saved_verify_sub'] = st.session_state['verify_active_sub']
+    if 'teardown_active_sub' in st.session_state:
+        st.session_state['saved_teardown_sub'] = st.session_state['teardown_active_sub']
+
+def _restore_tab_state():
+    """กู้คืน tab และ sub-section state ที่บันทึกไว้"""
+    # กู้คืน sub-sections
+    if 'saved_setup_sub' in st.session_state:
+        st.session_state['setup_active_sub'] = st.session_state['saved_setup_sub']
+    if 'saved_actions_sub' in st.session_state:
+        st.session_state['actions_active_sub'] = st.session_state['saved_actions_sub']
+    if 'saved_verify_sub' in st.session_state:
+        st.session_state['verify_active_sub'] = st.session_state['saved_verify_sub']
+    if 'saved_teardown_sub' in st.session_state:
+        st.session_state['teardown_active_sub'] = st.session_state['saved_teardown_sub']

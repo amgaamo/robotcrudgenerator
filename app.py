@@ -2559,6 +2559,11 @@ def main():
         render_verify_detail_dialog()
         return  # <--- 🛑 [สำคัญมาก] ต้องมี RETURN
 
+    elif st.session_state.get('show_kw_factory_dialog'):  # (CRUD - Import from KW Factory)
+        from modules.crud_generator.ui_crud import render_kw_factory_import_dialog
+        render_kw_factory_import_dialog()
+        return  # <--- 🛑 [สำคัญมาก] ต้องมี RETURN
+
     # --- Test Flow Dialog ---
     elif st.session_state.get('show_add_dialog'):
         render_add_step_dialog_base(

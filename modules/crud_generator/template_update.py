@@ -121,27 +121,13 @@ def _generate_action_list_update(all_keywords, all_locators):
 
 def _generate_action_detail_update(all_keywords, all_locators, ws):
     """
-    Generate Action Detail steps for Update
-    Different from Create: Modify existing values (add _UPDATED suffix)
+    Generate Action Detail steps for Update (Save + Modal only)
+    User will manually add form modification steps
     """
     steps = []
     
-    # 1. Modify form fields
-    kw_fill = find_keyword(all_keywords, 'Fill in data form')
-    if kw_fill:
-        form_locators = get_form_locators(all_locators)
-        
-        for locator_obj in form_locators:
-            # Use _UPDATED suffix to indicate modified value
-            steps.append(create_step(kw_fill['name'], {
-                "locator_field": locator_obj,
-                "value": "${UPDATED_VALUE}",  # Placeholder for updated value
-                "select_attribute": "label",
-                "is_checkbox_type": False,
-                "is_ant_design": False,
-                "is_switch_type": False,
-                "locator_switch_checked": ""
-            }))
+    # User will manually add fill steps via UI
+    # No auto-generation of form fields
     
     # 2. Click Save button
     kw_click = find_keyword(all_keywords, 'Click button on detail page')
@@ -208,33 +194,13 @@ def _generate_verify_list_update(all_keywords, all_locators, ws):
 
 def _generate_verify_detail_update(all_keywords, all_locators, ws):  # ← เพิ่ม all_locators
     """
-    Generate Verify Detail steps for Update
-    Different from Create: Verify UPDATED values
+    Generate Verify Detail steps for Update (Back button only)
+    User will manually add verification steps
     """
     steps = []
     
-    kw_verify = find_keyword(all_keywords, 'Verify data form')
-    if not kw_verify:
-        return steps
-    
-    # Get fill steps to create corresponding verify steps
-    fill_steps = ws.get('steps', {}).get('action_detail', [])
-    fill_steps = [s for s in fill_steps if s['keyword'] == 'Fill in data form']
-    
-    for fill_step in fill_steps:
-        locator_field = fill_step.get('args', {}).get('locator_field')
-        value = fill_step.get('args', {}).get('value')
-        is_checkbox = fill_step.get('args', {}).get('is_checkbox_type', False)
-        is_switch = fill_step.get('args', {}).get('is_switch_type', False)
-        
-        # Only verify text/select fields
-        if locator_field and value and not is_checkbox and not is_switch:
-            # Verify the UPDATED value
-            steps.append(create_step(kw_verify['name'], {
-                "locator_field": locator_field,
-                "expected_value": value,  # Should be ${UPDATED_VALUE}
-                "select_attribute": "label"
-            }))
+    # User will manually add verify steps via UI
+    # No auto-generation from fill steps
     
     # Click Back button
     kw_click = find_keyword(all_keywords, 'Click button on detail page')
