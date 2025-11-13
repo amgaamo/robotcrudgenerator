@@ -15,19 +15,57 @@ from ..utils import util_get_csv_headers
 
 def _create_default_steps_structure():
     return {
-        'suite_setup': [], 'test_setup': [], 'action_list': [], 'action_detail': [],
-        'verify_list': [], 'verify_detail': [], 'test_teardown': [], 'suite_teardown': []
+        'suite_setup': [], 'test_setup': [], 'action_list': [], 
+        'action_form': [], # <-- (ส่วน Fill Form ที่เพิ่มเข้ามา)
+        'action_detail': [],
+        
+        # --- (ส่วน Verify ที่แก้ไข) ---
+        'verify_list_search': [],
+        'verify_list_table': [],
+        'verify_list_nav': [],
+        'verify_detail_page': [],
+        'verify_detail_back': [],
+        # --- (สิ้นสุดการแก้ไข Verify) ---
+        
+        'test_teardown': [], 'suite_teardown': []
     }
 
 def initialize_workspace():
     ws = st.session_state.get('crud_generator_workspace', {})
-    if 'steps' not in ws or not isinstance(ws['steps'], dict):
-        ws['steps'] = _create_default_steps_structure()
-    for key in _create_default_steps_structure().keys():
-        if key not in ws['steps']:
-            ws['steps'][key] = []
-    st.session_state.crud_generator_workspace = ws
 
+    # Check if 'steps' exists and is a dictionary
+    if 'steps' not in ws or not isinstance(ws['steps'], dict):
+        # If 'steps' is missing or wrong type, create the whole structure fresh
+        ws['steps'] = _create_default_steps_structure()
+        st.write("DEBUG: Created NEW steps structure.") # Added Debug
+    else:
+        # If 'steps' exists, ensure ALL required keys from the default structure are present
+        # This handles cases where the state is from an older version missing keys
+        required_keys = _create_default_steps_structure().keys()
+        keys_added = [] # Track added keys for debug
+        for key in required_keys:
+            if key not in ws['steps']:
+                # Add the missing key with an empty list
+                ws['steps'][key] = []
+                keys_added.append(key)
+        if keys_added:
+             st.write(f"DEBUG: Added missing keys to existing steps: {keys_added}") # Added Debug
+        else:
+             st.write("DEBUG: Existing steps structure looks complete.") # Added Debug
+
+
+    # --- Keep the previous DEBUG prints ---
+    st.write("--- DEBUG: Inside initialize_workspace ---")
+    st.write("Workspace Steps Keys:", list(ws['steps'].keys())) # Use list() for clearer output
+    if 'action_form' in ws['steps']:
+        st.write("✅ 'action_form' key EXISTS during initialization.")
+    else:
+        st.write("❌ 'action_form' key is MISSING during initialization!")
+    st.write("--- End DEBUG ---")
+    # --- End DEBUG ---
+
+    st.session_state.crud_generator_workspace = ws
+    
 def _get_workspace():
     # ตรวจสอบเผื่อยังไม่ได้ init
     if 'crud_generator_workspace' not in st.session_state:
@@ -431,12 +469,19 @@ def generate_robot_script():
         _format_run_keywords("Suite Teardown", ws['steps']['suite_teardown'])
     ]
     
+    # --- (แก้ไขส่วนนี้ - DEFENSIVE VERSION) ---
+    # Use .get() with empty list default to handle missing keys gracefully
     all_test_steps = (
-        ws['steps']['action_list'] + 
-        ws['steps']['action_detail'] + 
-        ws['steps']['verify_list'] + 
-        ws['steps']['verify_detail']
+        ws['steps'].get('action_list', []) + 
+        ws['steps'].get('action_form', []) +         # <-- (ส่วน Fill Form)
+        ws['steps'].get('action_detail', []) + 
+        ws['steps'].get('verify_list_search', []) +  # <-- (ส่วน Verify ใหม่ 1)
+        ws['steps'].get('verify_list_table', []) +   # <-- (ส่วน Verify ใหม่ 2)
+        ws['steps'].get('verify_list_nav', []) +     # <-- (ส่วน Verify ใหม่ 3)
+        ws['steps'].get('verify_detail_page', []) +  # <-- (ส่วน Verify ใหม่ 4)
+        ws['steps'].get('verify_detail_back', [])    # <-- (ส่วน Verify ใหม่ 5)
     )
+    # --- (สิ้นสุดการแก้ไข) ---
     
     test_case_lines = [f"{ws.get('test_case_name', 'TC_Placeholder')}"]
     if ws.get('tags'):
@@ -452,8 +497,6 @@ def generate_robot_script():
     ]
     
     return "\n\n".join(filter(None, script_parts))
-
-# (Add this function definition inside manager.py)
 
 def update_step(section_key, step_id, updated_data):
     """Updates both keyword and arguments of an existing step."""

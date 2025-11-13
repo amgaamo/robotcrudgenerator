@@ -199,12 +199,22 @@ def render_sidebar():
                 if project_path:
                     st.session_state.project_path = project_path
                     st.session_state.project_structure = scan_robot_project(project_path)
+                    
+                    # ✅ รีเซ็ตการโหลด datasources และ locators
+                    st.session_state.datasources_auto_loaded = False
+                    st.session_state.locators_auto_loaded = False
+                    
                     st.rerun()
 
         with col2:
             if st.button("🔄 Clear", width='stretch', key="sidebar_clear"):
                 st.session_state.project_path = ""
                 st.session_state.project_structure = {}
+                
+                # ✅ รีเซ็ตการโหลด datasources และ locators
+                st.session_state.datasources_auto_loaded = False
+                st.session_state.locators_auto_loaded = False
+                
                 st.rerun()
 
         if st.session_state.project_structure and st.session_state.project_structure.get('folders'):
@@ -878,233 +888,337 @@ def render_test_data_tab():
     st.markdown("#### 🗃️ Test Data Management", unsafe_allow_html=True)
     ws_state = st.session_state.studio_workspace
 
+    # ✅ Auto-load datasources.resource เมื่อเริ่มต้น
+    if 'datasources_auto_loaded' not in st.session_state:
+        st.session_state.datasources_auto_loaded = False
+    
+    if not st.session_state.datasources_auto_loaded and st.session_state.project_path:
+        datasources_path = os.path.join(
+            st.session_state.project_path, 
+            'resources', 
+            'datasources.resource'
+        )
+        
+        if os.path.exists(datasources_path):
+            try:
+                with open(datasources_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                imported_sources = parse_data_sources(content)
+                
+                if imported_sources:
+                    ws_state.setdefault('data_sources', [])
+                    existing_names = {s['name'] for s in ws_state['data_sources']}
+                    
+                    new_sources_added = 0
+                    for source in imported_sources:
+                        if source['name'] not in existing_names:
+                            ws_state['data_sources'].append(source)
+                            new_sources_added += 1
+                    
+                    if new_sources_added > 0:
+                        st.success(f"✅ Auto-loaded {new_sources_added} data source links from `datasources.resource`")
+                
+                st.session_state.datasources_auto_loaded = True
+                
+            except Exception as e:
+                st.warning(f"⚠️ Could not auto-load datasources.resource: {e}")
+                st.session_state.datasources_auto_loaded = True
+        else:
+            st.info(f"ℹ️ No `datasources.resource` found. You can import it manually below.")
+            st.session_state.datasources_auto_loaded = True
+
+    # ✅ CSS สำหรับปรับขนาดปุ่ม toggle
+    st.markdown("""
+    <style>
+    button[key="toggle_csv_datasources"],
+    button[key="toggle_api_services"] {
+        padding: 2px 8px !important;
+        min-height: 28px !important;
+        height: 28px !important;
+        font-size: 0.85rem !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     # --- CSV Data Sources Section ---
-    with st.expander("📊 CSV Data Sources", expanded=True):
+    # ✅ เช็ค state สำหรับ toggle
+    if 'show_csv_datasources' not in st.session_state:
+        st.session_state.show_csv_datasources = True
+    
+    with st.container(border=True):
+        col1, col2 = st.columns([20, 1])
         
-        # --- Small create button at the top ---
-        if st.button("➕ Create New CSV File", width='content', type="secondary"):
-            ws_state['show_csv_creator'] = True
-            st.rerun()
+        with col1:
+            st.markdown(f"""
+            <div style='display: flex; align-items: center; gap: 10px;'>
+                <span style='font-size: 1.05rem; font-weight: 600; color: #cbd5e1;'>
+                    📊 CSV Data Sources
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
         
-        st.markdown("---")
+        with col2:
+            toggle_icon = "▼" if st.session_state.show_csv_datasources else "▶"
+            if st.button(
+                toggle_icon, 
+                key="toggle_csv_datasources",
+                help="Show/Hide",
+                use_container_width=True
+            ):
+                st.session_state.show_csv_datasources = not st.session_state.show_csv_datasources
+                st.rerun()
         
-        # --- Two-column layout for main content ---
-        left_panel, right_panel = st.columns([1, 2], gap="large")
-        
-        # --- LEFT PANEL: Import from datasources.resource ---
-        with left_panel:
-            st.markdown("##### 📥 Import Data Sources")
+        if st.session_state.show_csv_datasources:    
+            # --- Small create button at the top ---
+            if st.button("➕ Create New CSV File", width='content', type="secondary"):
+                ws_state['show_csv_creator'] = True
+                st.rerun()
             
-            uploaded_ds_file = st.file_uploader(
-                "Import from datasources.resource",
-                type=['resource'],
-                key="ds_resource_uploader",
-                help="Upload your datasources.resource file to auto-populate links.",
-                label_visibility="collapsed"
-            )
+            
+            # --- Two-column layout for main content ---
+            left_panel, right_panel = st.columns([1, 2], gap="large")
+            
+            # --- LEFT PANEL: Import from datasources.resource ---
+            with left_panel:
+                st.markdown("##### 📥 Import Data Sources")
+                
+                uploaded_ds_file = st.file_uploader(
+                    "Import from datasources.resource",
+                    type=['resource'],
+                    key="ds_resource_uploader",
+                    help="Upload your datasources.resource file to auto-populate links.",
+                    label_visibility="collapsed"
+                )
 
-            # --- Import Logic ---
-            if uploaded_ds_file:
-                if uploaded_ds_file.file_id != st.session_state.get('last_uploaded_ds_id'):
-                    st.session_state['last_uploaded_ds_id'] = uploaded_ds_file.file_id
-                    with st.spinner(f"Parsing {uploaded_ds_file.name}..."):
-                        try:
-                            content = uploaded_ds_file.getvalue().decode("utf-8")
-                            imported_sources = parse_data_sources(content)
+                # --- Import Logic ---
+                if uploaded_ds_file:
+                    if uploaded_ds_file.file_id != st.session_state.get('last_uploaded_ds_id'):
+                        st.session_state['last_uploaded_ds_id'] = uploaded_ds_file.file_id
+                        with st.spinner(f"Parsing {uploaded_ds_file.name}..."):
+                            try:
+                                content = uploaded_ds_file.getvalue().decode("utf-8")
+                                imported_sources = parse_data_sources(content)
 
-                            if not imported_sources:
-                                st.warning("No valid 'Import DataSource' keywords found.")
-                            else:
-                                ws_state.setdefault('data_sources', [])
-                                existing_names = {s['name'] for s in ws_state['data_sources']}
-                                new_sources_added = 0
-                                for source in imported_sources:
-                                    if source['name'] not in existing_names:
-                                        ws_state['data_sources'].append(source)
-                                        new_sources_added += 1
-                                if new_sources_added > 0:
-                                    st.success(f"Successfully imported {new_sources_added} new data source links!")
-                                    st.rerun()
+                                if not imported_sources:
+                                    st.warning("No valid 'Import DataSource' keywords found.")
                                 else:
-                                    st.info("All data sources already exist.")
-                        except Exception as e:
-                            st.error(f"Failed to parse file: {e}")
-        
-        # --- RIGHT PANEL: Data Source Links ---
-        
-        with right_panel:
-            st.markdown("##### 🔗 Data Source Links")
+                                    ws_state.setdefault('data_sources', [])
+                                    existing_names = {s['name'] for s in ws_state['data_sources']}
+                                    new_sources_added = 0
+                                    for source in imported_sources:
+                                        if source['name'] not in existing_names:
+                                            ws_state['data_sources'].append(source)
+                                            new_sources_added += 1
+                                    if new_sources_added > 0:
+                                        st.success(f"Successfully imported {new_sources_added} new data source links!")
+                                        st.rerun()
+                                    else:
+                                        st.info("All data sources already exist.")
+                            except Exception as e:
+                                st.error(f"Failed to parse file: {e}")
             
-            # --- Get CSV files ---
-            csv_files_options = []
-            if st.session_state.project_structure.get('csv_files'):
-                csv_files_in_datatest = [
-                    os.path.basename(f) for f in st.session_state.project_structure['csv_files']
-                    if 'resources/datatest' in f.replace(os.sep, '/')
-                ]
-                csv_files_options = sorted(list(set(csv_files_in_datatest)))
+            # --- RIGHT PANEL: Data Source Links ---
+            with right_panel:
+                st.markdown("##### 🔗 Data Source Links")
+                
+                # --- Get CSV files ---
+                csv_files_options = []
+                if st.session_state.project_structure.get('csv_files'):
+                    csv_files_in_datatest = [
+                        os.path.basename(f) for f in st.session_state.project_structure['csv_files']
+                        if 'resources/datatest' in f.replace(os.sep, '/')
+                    ]
+                    csv_files_options = sorted(list(set(csv_files_in_datatest)))
 
-            data_sources = ws_state.get('data_sources', [])
+                data_sources = ws_state.get('data_sources', [])
 
-            if not data_sources:
-                st.info("No data source links defined. Add one manually or import a file.")
-            else:
-                # Header - rendered ONCE
-                st.markdown("""
-                    <div class="ds-table-wrapper">
-                        <div class="ds-table-header">
-                            <div class="ds-header-item">
-                                <i class="fa-solid fa-database"></i>
-                                <span>Data Source Name</span>
-                            </div>
-                            <div class="ds-header-item">
-                                <i class="fa-solid fa-file-csv"></i>
-                                <span>CSV File</span>
-                            </div>
-                            <div class="ds-header-item">
-                                <i class="fa-solid fa-table-columns"></i>
-                                <span>Column Variable</span>
-                            </div>
-                            <div class="ds-header-item">
-                                <i class="fa-solid fa-gears"></i>
-                                <span>Actions</span>
-                            </div>
-                            <div class="ds-header-item">
-                                <i class="fa-solid fa-trash"></i>
+                if not data_sources:
+                    st.info("No data source links defined. Add one manually or import a file.")
+                else:
+                    # Header - rendered ONCE
+                    st.markdown("""
+                        <div class="ds-table-wrapper">
+                            <div class="ds-table-header">
+                                <div class="ds-header-item">
+                                    <i class="fa-solid fa-database"></i>
+                                    <span>Data Source Name</span>
+                                </div>
+                                <div class="ds-header-item">
+                                    <i class="fa-solid fa-file-csv"></i>
+                                    <span>CSV File</span>
+                                </div>
+                                <div class="ds-header-item">
+                                    <i class="fa-solid fa-table-columns"></i>
+                                    <span>Column Variable</span>
+                                </div>
+                                <div class="ds-header-item">
+                                    <i class="fa-solid fa-gears"></i>
+                                    <span>Actions</span>
+                                </div>
+                                <div class="ds-header-item">
+                                    <i class="fa-solid fa-trash"></i>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
 
-                # Data Rows
-                for i, source in enumerate(data_sources):
-                    is_imported = source.get('is_imported', False)
-                    
-                    st.markdown('<div class="ds-row-wrapper">', unsafe_allow_html=True)
-                    
-                    row_cols = st.columns([2.5, 2.5, 2, 1.5, 0.6])
+                    # Data Rows
+                    for i, source in enumerate(data_sources):
+                        is_imported = source.get('is_imported', False)
+                        
+                        st.markdown('<div class="ds-row-wrapper">', unsafe_allow_html=True)
+                        
+                        row_cols = st.columns([2.5, 2.5, 2, 1.5, 0.6])
 
-                    # Column 1: Data Source Name
-                    with row_cols[0]:
-                        if is_imported:
-                            st.markdown(f'<div class="imported-data-box">{source.get("name", "")}</div>', unsafe_allow_html=True)
-                        else:
-                            name_value = source.get('name', '')
-                            source['name'] = st.text_input(
-                                f"DS Name {i}", 
-                                value=name_value, 
-                                key=f"ds_name_{i}",
-                                label_visibility="collapsed", 
-                                placeholder="e.g., DS_USERS",
-                                help="Enter the data source variable name (uppercase recommended)"
-                            )
-                            if not name_value.strip():
-                                st.markdown(
-                                    '<div style="color: #d29922; font-size: 0.75rem; margin-top: 0.25rem;">⚠️ Required</div>',
-                                    unsafe_allow_html=True
-                                )
-
-                    # Column 2: CSV File
-                    with row_cols[1]:
-                        if is_imported:
-                            st.markdown(f'<div class="imported-data-box">{source.get("file_name", "")}</div>', unsafe_allow_html=True)
-                        else:
-                            selected_index = 0
-                            current_file = source.get('file_name', '')
-                            options_with_empty = [''] + csv_files_options
-                            
-                            if current_file in options_with_empty:
-                                try: 
-                                    selected_index = options_with_empty.index(current_file)
-                                except ValueError: 
-                                    selected_index = 0
-                            
-                            source['file_name'] = st.selectbox(
-                                f"CSV {i}", 
-                                options=options_with_empty, 
-                                index=selected_index, 
-                                key=f"ds_file_{i}", 
-                                label_visibility="collapsed",
-                                format_func=lambda x: x if x else "📂 Select CSV file...",
-                                help="Choose a CSV file from your datatest folder"
-                            )
-                            if not current_file:
-                                st.markdown(
-                                    '<div style="color: #d29922; font-size: 0.75rem; margin-top: 0.25rem;">⚠️ Required</div>',
-                                    unsafe_allow_html=True
-                                )
-
-                    # Column 3: Column Variable
-                    with row_cols[2]:
-                        if is_imported:
-                            st.markdown(f'<div class="imported-data-box">{source.get("col_name", "")}</div>', unsafe_allow_html=True)
-                        else:
-                            col_value = source.get('col_name', '')
-                            source['col_name'] = st.text_input(
-                                f"Col {i}", 
-                                value=col_value, 
-                                key=f"ds_col_{i}",
-                                label_visibility="collapsed", 
-                                placeholder="e.g., username",
-                                help="Enter the column variable name (lowercase recommended)"
-                            )
-                            if not col_value.strip():
-                                st.markdown(
-                                    '<div style="color: #d29922; font-size: 0.75rem; margin-top: 0.25rem;">⚠️ Required</div>',
-                                    unsafe_allow_html=True
-                                )
-
-                    # Column 4: Actions
-                    with row_cols[3]:
-                        if is_imported:
-                            st.markdown('<div class="imported-status-box">📋 Imported</div>', unsafe_allow_html=True)
-                        else:
-                            is_complete = (
-                                source.get('name', '').strip() and 
-                                source.get('file_name', '').strip() and 
-                                source.get('col_name', '').strip()
-                            )
-                            
-                            if is_complete:
-                                if st.button("💾 Export", key=f"export_{i}", width='stretch'):
-                                    data_source_export_dialog(source, i)
+                        # Column 1: Data Source Name
+                        with row_cols[0]:
+                            if is_imported:
+                                st.markdown(f'<div class="imported-data-box">{source.get("name", "")}</div>', unsafe_allow_html=True)
                             else:
-                                st.markdown(
-                                    '''<div style="
-                                        background: rgba(139, 148, 158, 0.1);
-                                        border: 1.5px solid rgba(139, 148, 158, 0.3);
-                                        border-radius: 8px;
-                                        padding: 0.6rem 1.3rem;
-                                        text-align: center;
-                                        color: rgba(139, 148, 158, 0.6);
-                                        font-weight: 600;
-                                        font-size: 0.85rem;
-                                        text-transform: uppercase;
-                                        cursor: not-allowed;
-                                    ">
-                                        🔒 Complete Form
-                                    </div>''',
-                                    unsafe_allow_html=True
+                                name_value = source.get('name', '')
+                                source['name'] = st.text_input(
+                                    f"DS Name {i}", 
+                                    value=name_value, 
+                                    key=f"ds_name_{i}",
+                                    label_visibility="collapsed", 
+                                    placeholder="e.g., DS_USERS",
+                                    help="Enter the data source variable name (uppercase recommended)"
                                 )
+                                if not name_value.strip():
+                                    st.markdown(
+                                        '<div style="color: #d29922; font-size: 0.75rem; margin-top: 0.25rem;">⚠️ Required</div>',
+                                        unsafe_allow_html=True
+                                    )
 
-                    # Column 5: Delete
-                    with row_cols[4]:
-                        if st.button("🗑️", key=f"del_{i}", help="Delete this data source link", width='stretch', type="secondary"):
-                            ws_state['data_sources'].pop(i)
-                            st.rerun()
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
+                        # Column 2: CSV File
+                        with row_cols[1]:
+                            if is_imported:
+                                st.markdown(f'<div class="imported-data-box">{source.get("file_name", "")}</div>', unsafe_allow_html=True)
+                            else:
+                                selected_index = 0
+                                current_file = source.get('file_name', '')
+                                options_with_empty = [''] + csv_files_options
+                                
+                                if current_file in options_with_empty:
+                                    try: 
+                                        selected_index = options_with_empty.index(current_file)
+                                    except ValueError: 
+                                        selected_index = 0
+                                
+                                source['file_name'] = st.selectbox(
+                                    f"CSV {i}", 
+                                    options=options_with_empty, 
+                                    index=selected_index, 
+                                    key=f"ds_file_{i}", 
+                                    label_visibility="collapsed",
+                                    format_func=lambda x: x if x else "📂 Select CSV file...",
+                                    help="Choose a CSV file from your datatest folder"
+                                )
+                                if not current_file:
+                                    st.markdown(
+                                        '<div style="color: #d29922; font-size: 0.75rem; margin-top: 0.25rem;">⚠️ Required</div>',
+                                        unsafe_allow_html=True
+                                    )
 
-            st.markdown("---")
-            if st.button("🔗 Add Data Source Link (Manual)", width='stretch', type="secondary"):
-                ws_state.setdefault('data_sources', []).append({
-                    'name': '', 'file_name': '', 'col_name': '', 'is_imported': False
-                })
+                        # Column 3: Column Variable
+                        with row_cols[2]:
+                            if is_imported:
+                                st.markdown(f'<div class="imported-data-box">{source.get("col_name", "")}</div>', unsafe_allow_html=True)
+                            else:
+                                col_value = source.get('col_name', '')
+                                source['col_name'] = st.text_input(
+                                    f"Col {i}", 
+                                    value=col_value, 
+                                    key=f"ds_col_{i}",
+                                    label_visibility="collapsed", 
+                                    placeholder="e.g., username",
+                                    help="Enter the column variable name (lowercase recommended)"
+                                )
+                                if not col_value.strip():
+                                    st.markdown(
+                                        '<div style="color: #d29922; font-size: 0.75rem; margin-top: 0.25rem;">⚠️ Required</div>',
+                                        unsafe_allow_html=True
+                                    )
+
+                        # Column 4: Actions
+                        with row_cols[3]:
+                            if is_imported:
+                                st.markdown('<div class="imported-status-box">📋 Imported</div>', unsafe_allow_html=True)
+                            else:
+                                is_complete = (
+                                    source.get('name', '').strip() and 
+                                    source.get('file_name', '').strip() and 
+                                    source.get('col_name', '').strip()
+                                )
+                                
+                                if is_complete:
+                                    if st.button("💾 Export", key=f"export_{i}", width='stretch'):
+                                        data_source_export_dialog(source, i)
+                                else:
+                                    st.markdown(
+                                        '''<div style="
+                                            background: rgba(139, 148, 158, 0.1);
+                                            border: 1.5px solid rgba(139, 148, 158, 0.3);
+                                            border-radius: 8px;
+                                            padding: 0.6rem 1.3rem;
+                                            text-align: center;
+                                            color: rgba(139, 148, 158, 0.6);
+                                            font-weight: 600;
+                                            font-size: 0.85rem;
+                                            text-transform: uppercase;
+                                            cursor: not-allowed;
+                                        ">
+                                            🔒 Complete Form
+                                        </div>''',
+                                        unsafe_allow_html=True
+                                    )
+
+                        # Column 5: Delete
+                        with row_cols[4]:
+                            if st.button("🗑️", key=f"del_{i}", help="Delete this data source link", width='stretch', type="secondary"):
+                                ws_state['data_sources'].pop(i)
+                                st.rerun()
+                        
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+                st.markdown("---")
+                if st.button("🔗 Add Data Source Link (Manual)", width='stretch', type="secondary"):
+                    ws_state.setdefault('data_sources', []).append({
+                        'name': '', 'file_name': '', 'col_name': '', 'is_imported': False
+                    })
+                    st.rerun()
+
+    # --- API Services Section ---
+    if 'show_api_services' not in st.session_state:
+        st.session_state.show_api_services = False
+    
+    with st.container(border=True):
+        col1, col2 = st.columns([20, 1])
+        
+        with col1:
+            st.markdown(f"""
+            <div style='display: flex; align-items: center; gap: 10px;'>
+                <span style='font-size: 1.05rem; font-weight: 600; color: #cbd5e1;'>
+                    🌐 API Services
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            toggle_icon = "▼" if st.session_state.show_api_services else "▶"
+            if st.button(
+                toggle_icon, 
+                key="toggle_api_services",
+                help="Show/Hide",
+                use_container_width=True
+            ):
+                st.session_state.show_api_services = not st.session_state.show_api_services
                 st.rerun()
-
-    # --- API Services Section (keep existing) ---
-    with st.expander("🌐 API Services", expanded=False):
-        render_api_generator_tab()
+        
+        if st.session_state.show_api_services:
+            st.markdown("---")
+            render_api_generator_tab()
 
 def render_api_generator_tab():
     """Renders the UI for the Intelligent API Keyword Generator."""
@@ -1272,11 +1386,10 @@ def render_editor_form(service_data):
                 on_change=lambda: service_data.update({'endpoint_path': st.session_state[f"editor_endpoint_path_{service_id}"]})
             )
 
-    # --- START: ปรับปรุง Expander "Request Options & Validation" ---
+    # --- Expander 2: Request Options ---
     with st.expander("⚙️ Request Options", expanded=True):
         st.markdown("**Header / Authentication**")
         
-        # --- ตัวเลือก Header Type ---
         header_options = ['simple', 'bearer', 'custom']
         service_data['headers_type'] = st.selectbox(
             "Header Type",
@@ -1285,7 +1398,6 @@ def render_editor_form(service_data):
             key=f"editor_header_type_{service_id}"
         )
 
-        # --- UI ตามเงื่อนไข ---
         if service_data['headers_type'] == 'bearer':
             service_data['bearer_token_var'] = st.text_input(
                 "Bearer Token Variable",
@@ -1300,17 +1412,15 @@ def render_editor_form(service_data):
                 help="ถ้าเลือก จะมีการเรียก Login เพื่อเอา uid/ucode มาใส่ใน Header ให้อัตโนมัติ"
             )
         
-        # --- Additional Headers (อยู่ข้างนอก ใช้ได้กับทุก Type) ---
         service_data['custom_header_manual_pairs'] = st.text_area(
             "Additional Headers (key: value)",
             value=service_data.get('custom_header_manual_pairs', 'Content-Type: application/json'),
             key=f"editor_manual_headers_{service_id}",
             help="ใส่ Header เพิ่มเติม บรรทัดละ 1 คู่, คั่นด้วยเครื่องหมาย colon (:)"
         )
-    # --- END: ปรับปรุง Expander ---
 
-    # --- Expander 3: Request Body & Arguments ---
-    with st.expander("📝 Request Body & Arguments"):
+    # --- Expander 3: Request Body & Arguments (ส่วนที่แก้ไขใหม่) ---
+    with st.expander("📝 Request Body & Arguments", expanded=True):
         st.text_area(
             "Paste JSON Body Sample",
             key=f"editor_req_body_{service_id}",
@@ -1320,133 +1430,277 @@ def render_editor_form(service_data):
         )
 
         if st.button("✨ Analyze Request & Generate Arguments", key=f"editor_analyze_{service_id}", width='stretch'):
-            # (Logic การ Analyze เดิม)
             try:
                 service_data['analyzed_fields'] = {}
                 if service_data['req_body_sample'].strip():
                     body_json = json.loads(service_data['req_body_sample'])
-                    if isinstance(body_json, dict):
-                        for key, value in body_json.items():
-                            service_data['analyzed_fields'][key] = {"value": value, "is_argument": False, "arg_name": key}
-                st.success("Analysis Complete!")
+                    
+                    # ✅ ใช้ฟังก์ชันใหม่เพื่อ flatten JSON แบบ nested
+                    flattened = flatten_json_for_args(body_json)
+                    
+                    for path, value in flattened.items():
+                        # สร้าง argument name จาก path
+                        # เช่น header.cpid -> header_cpid
+                        arg_name = path.replace('.', '_').replace('[', '_').replace(']', '')
+                        
+                        service_data['analyzed_fields'][path] = {
+                            "value": value,
+                            "is_argument": False,
+                            "arg_name": arg_name,
+                            "json_path": path,  # เก็บ path ไว้
+                            "default_value": ""  # ✅ เพิ่ม field สำหรับ default value
+                        }
+                    
+                st.success(f"Analysis Complete! Found {len(service_data.get('analyzed_fields', {}))} fields.")
+                st.rerun()
             except json.JSONDecodeError:
                 st.error("Invalid JSON in Request Body.")
             except Exception as e:
                 st.error(f"Analysis Error: {e}")
 
+        # ✅ แสดงผลแบบ Tree Structure
         if service_data.get('analyzed_fields'):
+            st.markdown("---")
             st.markdown("**Fields to make Arguments:**")
-            for key, arg_details in service_data['analyzed_fields'].items():
-                cols = st.columns([1, 4, 3])
-                with cols[0]:
-                    arg_details['is_argument'] = st.checkbox(" ", value=arg_details.get('is_argument', False), key=f"editor_is_arg_{key}_{service_id}")
-                with cols[1]:
-                    st.code(f'"{key}": {json.dumps(arg_details["value"])}', language="json")
-                with cols[2]:
-                    arg_details['arg_name'] = st.text_input("Arg Name", value=arg_details.get('arg_name', key), key=f"editor_arg_name_{key}_{service_id}", label_visibility="collapsed", disabled=not arg_details['is_argument'])
+            st.caption("💡 Check fields you want to use as arguments, set custom names, and provide default values")
+            
+            # จัดกลุ่มตาม parent path
+            grouped_fields = {}
+            parent_order = []  # ✅ เก็บลำดับที่เจอ parent
+            
+            for path, field_data in service_data['analyzed_fields'].items():
+                parts = path.split('.')
+                parent = parts[0] if len(parts) > 1 else "Root"
+                
+                # ✅ เก็บลำดับที่เจอ parent ครั้งแรก
+                if parent not in grouped_fields:
+                    grouped_fields[parent] = []
+                    parent_order.append(parent)
+                
+                grouped_fields[parent].append((path, field_data))
+            
+            # ✅ แสดงแต่ละกลุ่มตามลำดับที่เจอใน JSON
+            for parent in parent_order:
+                fields = grouped_fields[parent]
+                
+                with st.container(border=True):
+                    st.markdown(f"**📦 {parent}**")
+                    
+                    # ✅ Header สำหรับตาราง (3 คอลัมน์)
+                    st.markdown("""
+                        <div style='display: grid; grid-template-columns: 0.5fr 2.5fr 2fr 2fr; 
+                                    font-weight: 600; padding: 8px 4px; 
+                                    background-color: rgba(128, 128, 128, 0.15); 
+                                    border-radius: 4px; margin-bottom: 8px; font-size: 0.85rem;'>
+                            <div style='text-align: center;'>Use</div>
+                            <div>Field Path</div>
+                            <div>Argument Name</div>
+                            <div>Assign Value</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    for path, field_data in sorted(fields, key=lambda x: x[0]):
+                        # ✅ เปลี่ยนเป็น 4 คอลัมน์
+                        cols = st.columns([0.5, 2.5, 2, 2])
+                        
+                        # Column 1: Checkbox (Use as Argument)
+                        with cols[0]:
+                            field_data['is_argument'] = st.checkbox(
+                                " ", 
+                                value=field_data.get('is_argument', False), 
+                                key=f"editor_is_arg_{service_id}_{path}",
+                                label_visibility="collapsed"
+                            )
+                        
+                        # Column 2: Field Path
+                        with cols[1]:
+                            display_path = path.replace(f"{parent}.", "") if parent != "Root" else path
+                            # แสดง sample value ข้างหลัง path
+                            sample_val = str(field_data.get('value', ''))
+                            if len(sample_val) > 30:
+                                sample_val = sample_val[:30] + "..."
+                            st.markdown(f"`{display_path}`")
+                            st.caption(f"Sample: {sample_val}")
+                        
+                        # Column 3: Argument Name (ใช้ได้เฉพาะเมื่อ Use = True)
+                        with cols[2]:
+                            field_data['arg_name'] = st.text_input(
+                                "Arg Name", 
+                                value=field_data.get('arg_name', ''), 
+                                key=f"editor_arg_name_{service_id}_{path}", 
+                                label_visibility="collapsed",
+                                disabled=not field_data['is_argument'],
+                                placeholder="arg_name"
+                            )
+                        
+                        # Column 4: Assign Value (✅ เปิดให้แก้ไขได้เสมอ)
+                        with cols[3]:
+                            # ✅ ถ้ายังไม่มี assigned_value ให้ใช้ค่า sample เดิม
+                            if 'assigned_value' not in field_data:
+                                field_data['assigned_value'] = str(field_data.get('value', ''))
+                            
+                            field_data['assigned_value'] = st.text_input(
+                                "Assign Value", 
+                                value=field_data.get('assigned_value', ''), 
+                                key=f"editor_assign_val_{service_id}_{path}", 
+                                label_visibility="collapsed",
+                                placeholder="value to assign",
+                                help="This value will be used in the generated JSON"
+                            )
+            
+            # ปุ่มเพิ่มฟิลด์ใหม่
+            st.markdown("---")
+            if st.button("➕ Add Custom Field", key=f"add_field_{service_id}", type="secondary"):
+                new_path = f"custom_field_{len(service_data['analyzed_fields'])}"
+                service_data['analyzed_fields'][new_path] = {
+                    "value": "",
+                    "is_argument": True,
+                    "arg_name": new_path,
+                    "json_path": new_path,
+                    "default_value": ""
+                }
+                st.rerun()
 
     # --- Expander 4: Response Handling ---
-                # --- START: โค้ดฉบับสมบูรณ์สำหรับ Expander "Response Handling & Variable Extraction" ---
     with st.expander("📥 Response Handling & Variable Extraction", expanded=True):
-                    st.markdown("**Response Validation**")
-                    service_data['add_status_validation'] = st.checkbox(
-                        "Enable Response Status Validation",
-                        value=service_data.get('add_status_validation', True),
-                        key=f"editor_add_validation_{service_id}",
-                        help="สร้างโค้ด IF/ELSE เพื่อตรวจสอบว่า API สำเร็จหรือไม่"
-                    )
+        st.markdown("**Response Validation**")
+        service_data['add_status_validation'] = st.checkbox(
+            "Enable Response Status Validation",
+            value=service_data.get('add_status_validation', True),
+            key=f"editor_add_validation_{service_id}",
+            help="สร้างโค้ด IF/ELSE เพื่อตรวจสอบว่า API สำเร็จหรือไม่"
+        )
 
-                    if service_data['add_status_validation']:
-                        val_cols = st.columns(3)
-                        with val_cols[0]:
-                            st.caption("JSON Path to Status")
-                            service_data['status_field_path'] = st.text_input(
-                                "JSON Path to Status",
-                                value=service_data.get('status_field_path', 'status'),
-                                key=f"editor_status_path_{service_id}",
-                                label_visibility="collapsed",
-                                placeholder="e.g., status"
-                            )
-                        with val_cols[1]:
-                            st.caption("Expected Success Value")
-                            service_data['status_success_value'] = st.text_input(
-                                "Expected Success Value",
-                                value=service_data.get('status_success_value', 'success'),
-                                key=f"editor_success_value_{service_id}",
-                                label_visibility="collapsed",
-                                placeholder="e.g., success"
-                            )
-                        with val_cols[2]:
-                            st.caption("JSON Path to Error Msg")
-                            service_data['error_message_path'] = st.text_input(
-                                "JSON Path to Error Msg",
-                                value=service_data.get('error_message_path', 'message'),
-                                key=f"editor_error_path_{service_id}",
-                                label_visibility="collapsed",
-                                placeholder="e.g., message"
-                            )
+        if service_data['add_status_validation']:
+            val_cols = st.columns(3)
+            with val_cols[0]:
+                st.caption("JSON Path to Status")
+                service_data['status_field_path'] = st.text_input(
+                    "JSON Path to Status",
+                    value=service_data.get('status_field_path', 'status'),
+                    key=f"editor_status_path_{service_id}",
+                    label_visibility="collapsed",
+                    placeholder="e.g., status"
+                )
+            with val_cols[1]:
+                st.caption("Expected Success Value")
+                service_data['status_success_value'] = st.text_input(
+                    "Expected Success Value",
+                    value=service_data.get('status_success_value', 'success'),
+                    key=f"editor_success_value_{service_id}",
+                    label_visibility="collapsed",
+                    placeholder="e.g., success"
+                )
+            with val_cols[2]:
+                st.caption("JSON Path to Error Msg")
+                service_data['error_message_path'] = st.text_input(
+                    "JSON Path to Error Msg",
+                    value=service_data.get('error_message_path', 'message'),
+                    key=f"editor_error_path_{service_id}",
+                    label_visibility="collapsed",
+                    placeholder="e.g., message"
+                )
 
-                    st.markdown("---")
-                    st.markdown("**Response Body Sample & Variable Extraction**")
-                    
-                    # --- ส่วนของ Text Area ที่หายไป ถูกเพิ่มกลับเข้ามาแล้ว ---
-                    st.text_area(
-                        "Paste JSON Response Sample",
-                        key=f"editor_resp_body_{service_id}",
-                        value=service_data['resp_body_sample'],
-                        height=200,
-                        on_change=lambda: service_data.update({'resp_body_sample': st.session_state[f"editor_resp_body_{service_id}"]})
-                    )
+        st.markdown("---")
+        st.markdown("**Response Body Sample & Variable Extraction**")
+        
+        st.text_area(
+            "Paste JSON Response Sample",
+            key=f"editor_resp_body_{service_id}",
+            value=service_data['resp_body_sample'],
+            height=200,
+            on_change=lambda: service_data.update({'resp_body_sample': st.session_state[f"editor_resp_body_{service_id}"]})
+        )
 
-                    if st.button("🔍 Analyze Response & Find Variables", key=f"editor_analyze_resp_{service_id}", width='stretch'):
-                        try:
-                            resp_json = json.loads(service_data['resp_body_sample'])
-                            found_paths = flatten_json_with_paths(resp_json)
-                            
-                            service_data.setdefault('response_extractions', [])
-                            existing_paths = {item['json_path'] for item in service_data['response_extractions']}
-                            
-                            new_items_added = 0
-                            for path, sample_value in found_paths.items():
-                                if path not in existing_paths:
-                                    service_data['response_extractions'].append({
-                                        "id": str(uuid.uuid4()),
-                                        "json_path": path,
-                                        "sample_value": str(sample_value)[:100],
-                                        "is_enabled": False,
-                                        "var_name": generate_variable_name_from_path(path)
-                                    })
-                                    new_items_added += 1
-                            st.success(f"Analysis complete! Found {len(found_paths)} data paths. Added {new_items_added} new potential variables.")
-                        except json.JSONDecodeError:
-                            st.error("Invalid JSON in Response Body.")
-                        except Exception as e:
-                            st.error(f"Analysis Error: {e}")
+        if st.button("🔍 Analyze Response & Find Variables", key=f"editor_analyze_resp_{service_id}", width='stretch'):
+            try:
+                resp_json = json.loads(service_data['resp_body_sample'])
+                found_paths = flatten_json_with_paths(resp_json)
+                
+                service_data.setdefault('response_extractions', [])
+                existing_paths = {item['json_path'] for item in service_data['response_extractions']}
+                
+                new_items_added = 0
+                for path, sample_value in found_paths.items():
+                    if path not in existing_paths:
+                        service_data['response_extractions'].append({
+                            "id": str(uuid.uuid4()),
+                            "json_path": path,
+                            "sample_value": str(sample_value)[:100],
+                            "is_enabled": False,
+                            "var_name": generate_variable_name_from_path(path)
+                        })
+                        new_items_added += 1
+                st.success(f"Analysis complete! Found {len(found_paths)} data paths. Added {new_items_added} new potential variables.")
+            except json.JSONDecodeError:
+                st.error("Invalid JSON in Response Body.")
+            except Exception as e:
+                st.error(f"Analysis Error: {e}")
 
-                    if service_data.get('response_extractions'):
-                        st.markdown("**Variables to Extract:** (Check to enable)")
-                        
-                        with st.container(border=True):
-                            st.markdown("""<div style='display: grid; grid-template-columns: 1fr 4fr 4fr; font-weight: bold;'>
-                                        <div>Use</div>
-                                        <div>Response Data Path</div>
-                                        <div>Robot Variable Name</div>
-                                        </div>""", unsafe_allow_html=True)
-                            
-                            for item in service_data['response_extractions']:
-                                cols = st.columns([1, 4, 4])
-                                with cols[0]:
-                                    item['is_enabled'] = st.checkbox(" ", value=item.get('is_enabled', False), key=f"editor_resp_isenabled_{item['id']}")
-                                with cols[1]:
-                                    st.markdown(f"`{item['json_path']}`")
-                                    st.caption(f"Sample: {item['sample_value']}")
-                                with cols[2]:
-                                    item['var_name'] = st.text_input("Var Name", value=item['var_name'], key=f"editor_resp_varname_{item['id']}", label_visibility="collapsed", disabled=not item['is_enabled'])
-                            
-                            if st.button("Clear unused variables", key=f"editor_clear_unused_{service_id}", help="Remove all variables that are not checked"):
-                                service_data['response_extractions'] = [item for item in service_data['response_extractions'] if item.get('is_enabled')]
-                                st.rerun()
-                # --- END: โค้ดฉบับสมบูรณ์ ---
+        if service_data.get('response_extractions'):
+            st.markdown("**Variables to Extract:** (Check to enable)")
+            
+            with st.container(border=True):
+                st.markdown("""<div style='display: grid; grid-template-columns: 1fr 4fr 4fr; font-weight: bold;'>
+                            <div>Use</div>
+                            <div>Response Data Path</div>
+                            <div>Robot Variable Name</div>
+                            </div>""", unsafe_allow_html=True)
+                
+                for item in service_data['response_extractions']:
+                    cols = st.columns([1, 4, 4])
+                    with cols[0]:
+                        item['is_enabled'] = st.checkbox(" ", value=item.get('is_enabled', False), key=f"editor_resp_isenabled_{item['id']}")
+                    with cols[1]:
+                        st.markdown(f"`{item['json_path']}`")
+                        st.caption(f"Sample: {item['sample_value']}")
+                    with cols[2]:
+                        item['var_name'] = st.text_input("Var Name", value=item['var_name'], key=f"editor_resp_varname_{item['id']}", label_visibility="collapsed", disabled=not item['is_enabled'])
+                
+                if st.button("Clear unused variables", key=f"editor_clear_unused_{service_id}", help="Remove all variables that are not checked"):
+                    service_data['response_extractions'] = [item for item in service_data['response_extractions'] if item.get('is_enabled')]
+                    st.rerun()
+
+
+def flatten_json_for_args(obj, parent_key='', sep='.'):
+    """
+    Flatten nested JSON สำหรับแสดงเป็น Arguments
+    
+    ตัวอย่าง:
+    {"header": {"cpid": null, "name": "test"}, "detail": {"id": 1}}
+    
+    จะกลายเป็น:
+    {
+        "header.cpid": null,
+        "header.name": "test",
+        "detail.id": 1
+    }
+    """
+    items = {}
+    
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            
+            if isinstance(v, dict):
+                # ถ้าเป็น dict ให้ flatten ต่อ
+                items.update(flatten_json_for_args(v, new_key, sep=sep))
+            elif isinstance(v, list) and v and isinstance(v[0], dict):
+                # ถ้าเป็น array of objects ให้เอาตัวแรก
+                items.update(flatten_json_for_args(v[0], f"{new_key}[0]", sep=sep))
+            else:
+                # ถ้าเป็น primitive value (string, number, boolean, null)
+                items[new_key] = v
+    elif isinstance(obj, list) and obj:
+        # ถ้าเป็น array ให้เอาตัวแรก
+        if isinstance(obj[0], dict):
+            items.update(flatten_json_for_args(obj[0], f"{parent_key}[0]", sep=sep))
+        else:
+            items[f"{parent_key}[0]"] = obj[0]
+    else:
+        items[parent_key] = obj
+    
+    return items
 
 def generate_set_path_keyword_line(service_data):
     """Generates the single 'Set Global Variable' line for the Set Path Request URL keyword."""
@@ -1593,29 +1847,141 @@ def generate_variable_name_from_path(json_path):
     
     return f"GLOBAL_{'_'.join(parts).upper()}"
 
+def rebuild_json_from_args(analyzed_fields, args_dict):
+    """
+    สร้าง JSON กลับจาก flat structure พร้อม default values
+    
+    Args:
+        analyzed_fields: dict ที่มี path และ config
+        args_dict: dict ของ argument values
+    
+    Returns:
+        dict: JSON structure ที่สมบูรณ์
+    """
+    result = {}
+    
+    for path, field_data in analyzed_fields.items():
+        if not field_data.get('is_argument'):
+            continue
+            
+        # ดึงค่า
+        arg_name = field_data['arg_name']
+        default_val = field_data.get('default_value', '')
+        
+        # ใช้ default value ถ้ามี
+        value_placeholder = f"${{{arg_name}}}" if not default_val else default_val
+        
+        # แยก path
+        keys = path.replace('[0]', '').split('.')
+        
+        # สร้าง nested dict
+        current = result
+        for i, key in enumerate(keys[:-1]):
+            if key not in current:
+                current[key] = {}
+            current = current[key]
+        
+        # ใส่ค่าสุดท้าย
+        current[keys[-1]] = value_placeholder
+    
+    return result
+
+def rebuild_json_from_analyzed_fields(analyzed_fields):
+    """
+    สร้าง JSON กลับจาก analyzed_fields โดยใช้ assigned_value หรือ placeholder
+    
+    Args:
+        analyzed_fields: dict ที่มี path และ field_data
+    
+    Returns:
+        dict: JSON structure ที่สมบูรณ์
+    """
+    result = {}
+    
+    for path, field_data in analyzed_fields.items():
+        # แยก path
+        keys = path.split('.')
+        
+        # สร้าง nested dict
+        current = result
+        for i, key in enumerate(keys[:-1]):
+            clean_key = key.replace('[0]', '')
+            if clean_key not in current:
+                current[clean_key] = {}
+            current = current[clean_key]
+        
+        # ใส่ค่าสุดท้าย
+        last_key = keys[-1].replace('[0]', '')
+        
+        if field_data.get('is_argument'):
+            # ✅ ถ้า Use = True → ใช้ argument placeholder
+            arg_name = field_data['arg_name']
+            current[last_key] = f"__PLACEHOLDER_{arg_name}__"
+        else:
+            # ✅ ถ้า Use = False → ใช้ assigned_value
+            value = field_data.get('assigned_value', field_data.get('value', ''))
+            
+            # แปลงค่าให้ถูกต้องตามประเภท
+            if value == 'null' or value == '' or value is None:
+                current[last_key] = None
+            elif value == 'true':
+                current[last_key] = True
+            elif value == 'false':
+                current[last_key] = False
+            elif isinstance(value, str) and value.lstrip('-').isdigit():
+                current[last_key] = int(value)
+            elif isinstance(value, str):
+                try:
+                    current[last_key] = float(value)
+                except ValueError:
+                    current[last_key] = value
+            else:
+                current[last_key] = value
+    
+    return result
+
 def generate_main_keyword_code(service_data):
     """Generates the complete main keyword code for the specific service file."""
     kw_name = f"Request {service_data.get('service_name', 'Untitled').replace('_', ' ').title()}"
     
-    # --- 1. Build Arguments ---
+    # --- 1. Build Arguments (✅ ปรับให้ขึ้นบรรทัดใหม่เมื่อมากกว่า 8) ---
     args = ["${headeruser}", "${headerpassword}"]
-    for field_data in service_data.get('analyzed_fields', {}).values():
+    for path, field_data in service_data.get('analyzed_fields', {}).items():
         if field_data.get('is_argument'):
             args.append(f"${{{field_data['arg_name']}}}")
-    args_str = "    ".join(args)
+    
+    # ✅ ถ้ามี arguments มากกว่า 8 ให้ขึ้นบรรทัดใหม่
+    if len(args) <= 8:
+        args_str = "    ".join(args)
+        args_section = f"    [Arguments]    {args_str}"
+    else:
+        # บรรทัดแรก
+        args_lines = ["    [Arguments]    " + "    ".join(args[:8])]
+        # บรรทัดถัดไปใช้ ...
+        remaining_args = args[8:]
+        for i in range(0, len(remaining_args), 8):
+            chunk = remaining_args[i:i+8]
+            args_lines.append("    ...    " + "    ".join(chunk))
+        args_section = "\n".join(args_lines)
 
     # --- 2. Build Multi-line Catenate for Body ---
     body_code = ""
     try:
-        body_dict = json.loads(service_data.get('req_body_sample', '{}'))
-        replacements = []
-        for key, field_data in service_data.get('analyzed_fields', {}).items():
-            if field_data.get('is_argument'):
-                placeholder = f"__PLACEHOLDER_{field_data['arg_name']}__"
-                if key in body_dict:
-                    body_dict[key] = placeholder
-                    replacements.append((f'"{placeholder}"', f'${{{field_data["arg_name"]}}}'))
+        # ✅ สร้าง JSON จาก analyzed_fields (ใช้ assigned_value)
+        body_dict = rebuild_json_from_analyzed_fields(service_data.get('analyzed_fields', {}))
+        
+        # แปลงเป็น JSON string แบบสวยงาม
         pretty_json = json.dumps(body_dict, indent=4, ensure_ascii=False)
+        
+        # ✅ แทนที่ placeholder ด้วย Robot Framework variables
+        replacements = []
+        for path, field_data in service_data.get('analyzed_fields', {}).items():
+            if field_data.get('is_argument'):
+                arg_name = field_data['arg_name']
+                placeholder = f'"__PLACEHOLDER_{arg_name}__"'
+                replacement = f'${{{arg_name}}}'
+                replacements.append((placeholder, replacement))
+        
         final_body_str = pretty_json
         for p_str, v_str in replacements:
             final_body_str = final_body_str.replace(p_str, v_str, 1)
@@ -1629,7 +1995,7 @@ def generate_main_keyword_code(service_data):
             body_code = "\n".join(output_lines)
         else:
             body_code = f"    ${{bodydata}}=    Catenate    {final_body_str}"
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, TypeError) as e:
         body_code = f"    ${{bodydata}}=    Catenate    {service_data.get('req_body_sample', '{}')}"
 
     # --- 3. Build Preparation & Header Logic ---
@@ -1645,12 +2011,10 @@ def generate_main_keyword_code(service_data):
     header_type = service_data.get('headers_type', 'simple')
     custom_dict_items = []
 
-    # Step 3.1: Conditional Login for uid/ucode
     if header_type == 'custom' and service_data.get('custom_header_use_uid_ucode'):
-        prep_lines.append("    api_base.Request Service for get session data    ${headeruser}    ${headerpassword}")
+        prep_lines.append("\n    api_base.Request Service for get session data    ${headeruser}    ${headerpassword}")
         custom_dict_items.extend(["uid=${GLOBAL_API_UID}", "ucode=${GLOBAL_API_UCODE}"])
 
-    # Step 3.2: Build Header Dictionary from bearer token or manual entries
     if header_type == 'bearer':
         token_var = service_data.get('bearer_token_var', '${GLOBAL_ACCESS_TOKEN}')
         custom_dict_items.append(f"Authorization=Bearer {token_var}")
@@ -1662,7 +2026,6 @@ def generate_main_keyword_code(service_data):
                 key, value = line.split(':', 1)
                 custom_dict_items.append(f"{key.strip()}={value.strip()}")
 
-    # Step 3.3: Determine Execute API arguments based on what we've built
     if not custom_dict_items:
         execute_api_args.append("    ...    headers_type=simple")
     else:
@@ -1676,22 +2039,29 @@ def generate_main_keyword_code(service_data):
         status_path = service_data.get('status_field_path', 'status')
         success_value = service_data.get('status_success_value', 'success')
         error_path = service_data.get('error_message_path', 'message')
-        validation_code.extend([f"    ${{status_val}}=    Set Variable    ${{GLOBAL_RESPONSE_JSON}}[{status_path}]",f"    IF    '${{status_val}}' == '{success_value}'"])
+        validation_code.extend([
+            f"    ${{status_val}}=    Set Variable    ${{GLOBAL_RESPONSE_JSON}}[{status_path}]",
+            f"    IF    '${{status_val}}' == '{success_value}'"
+        ])
         for mapping in service_data.get('response_extractions', []):
             if mapping.get('is_enabled') and mapping.get('var_name'):
                 robot_path = ''.join([f"[{p}]" for p in mapping['json_path'].replace(']', '').replace('[', '.').split('.')])
                 validation_code.append(f"        Set Global Variable    ${{{mapping['var_name']}}}    ${{GLOBAL_RESPONSE_JSON}}{robot_path}")
-        validation_code.extend(["    ELSE",f"        Fail    API call failed. Status: ${{status_val}}, Message: ${{GLOBAL_RESPONSE_JSON}}[{error_path}]","    END"])
+        validation_code.extend([
+            "    ELSE",
+            f"        Fail    API call failed. Status: ${{status_val}}, Message: ${{GLOBAL_RESPONSE_JSON}}[{error_path}]",
+            "    END"
+        ])
     else:
         for mapping in service_data.get('response_extractions', []):
             if mapping.get('is_enabled') and mapping.get('var_name'):
                 robot_path = ''.join([f"[{p}]" for p in mapping['json_path'].replace(']', '').replace('[', '.').split('.')])
                 validation_code.append(f"    Set Global Variable    ${{{mapping['var_name']}}}    ${{GLOBAL_RESPONSE_JSON}}{robot_path}")
 
-    # --- 5. Assemble the final keyword ---
+    # --- 5. Assemble the final keyword (✅ ใช้ args_section แทน) ---
     final_code = [
         f"{kw_name}",
-        f"    [Arguments]    {args_str}",
+        args_section,  # ✅ ใช้ตัวแปรที่สร้างไว้
         *prep_lines,
         body_code,
         "",
@@ -1968,17 +2338,74 @@ def html_editor_dialog():
     # เรียกใช้ฟังก์ชัน dialog ที่เพิ่งสร้าง
     edit_html()
 
-
 def render_resources_view_new():
     """ 
     Renders the Resources view in a two-column layout.
-    [MODIFIED V2] Replaced Menu Locator text_area with a friendly UI
-    using st.data_editor and tabs.
+    [MODIFIED V3] Added auto-load locators from pageobjects folder
     """
     ws_state = st.session_state.studio_workspace
     
     if 'editing_html_index' not in ws_state:
         ws_state['editing_html_index'] = None
+
+    # ✅ เพิ่ม: Auto-load locators จาก pageobjects folder
+    if 'locators_auto_loaded' not in st.session_state:
+        st.session_state.locators_auto_loaded = False
+    
+    if not st.session_state.locators_auto_loaded and st.session_state.project_path:
+        pageobjects_folder = os.path.join(st.session_state.project_path, 'pageobjects')
+        
+        if os.path.exists(pageobjects_folder):
+            try:
+                # ดึงไฟล์ .robot และ .resource ทั้งหมดจากโฟลเดอร์ pageobjects
+                locator_files = []
+                for root, dirs, files in os.walk(pageobjects_folder):
+                    for file in files:
+                        if file.endswith(('.robot', '.resource')):
+                            locator_files.append(os.path.join(root, file))
+                
+                if locator_files:
+                    total_loaded = 0
+                    files_loaded = 0
+                    
+                    for file_path in locator_files:
+                        file_name = os.path.relpath(file_path, st.session_state.project_path)
+                        
+                        # เช็คว่าไฟล์นี้โหลดแล้วหรือยัง
+                        if any(loc.get('page_name') == file_name for loc in ws_state.get('locators', [])):
+                            continue
+                        
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            
+                            locators = read_robot_variables_from_content(content)
+                            
+                            if locators:
+                                for loc in locators:
+                                    loc['page_name'] = file_name
+                                    if 'id' not in loc or not loc['id']:
+                                        loc['id'] = str(uuid.uuid4())
+                                
+                                ws_state.setdefault('locators', []).extend(locators)
+                                total_loaded += len(locators)
+                                files_loaded += 1
+                        
+                        except Exception as e:
+                            # ข้ามไฟล์ที่อ่านไม่ได้
+                            continue
+                    
+                    if total_loaded > 0:
+                        st.success(f"✅ Auto-loaded {total_loaded} locators from {files_loaded} files in `pageobjects` folder")
+                
+                st.session_state.locators_auto_loaded = True
+                
+            except Exception as e:
+                st.warning(f"⚠️ Could not auto-load locators from pageobjects: {e}")
+                st.session_state.locators_auto_loaded = True
+        else:
+            st.info(f"ℹ️ No `pageobjects` folder found.")
+            st.session_state.locators_auto_loaded = True
 
     # --- Re-establish the two-column layout ---
     panel_grid = st.columns([1, 1], gap="large")
@@ -2010,8 +2437,6 @@ def render_resources_view_new():
                             
                             all_variables = read_robot_variables_from_content(content)
                             
-                            # --- START: โค้ดที่แก้ไข ---
-                            
                             new_menu_locators = {}
                             new_common_vars = []
                             
@@ -2022,11 +2447,8 @@ def render_resources_view_new():
                                 else:
                                     new_common_vars.append(v)
                             
-                            # อัปเดตทั้งสองส่วน
                             ws_state['common_variables'] = new_common_vars
                             ws_state['menu_locators'] = new_menu_locators 
-                            
-                            # --- END: โค้ดที่แก้ไข ---
                             
                             ws_state['common_keyword_path'] = uploaded_keyword_file.name                                
                             st.success(f"Successfully replaced keywords and variables with '{uploaded_keyword_file.name}'!")
@@ -2034,103 +2456,213 @@ def render_resources_view_new():
                         except Exception as e:
                             st.error(f"Failed to parse file: {e}")
 
-            # --- START: [V3] Common Variables Display (Green) ---
+            # --- Common Variables Display ---
             if ws_state.get('common_variables'):
-                
+    
                 valid_vars = [v for v in ws_state['common_variables'] if v.get('name')]
+    
+                if 'show_common_vars' not in st.session_state:
+                    st.session_state.show_common_vars = False
                 
-                with st.expander(f"Show/Hide Loaded Common Variables ({len(valid_vars)} items)", expanded=False):
+                st.markdown("""
+                <style>
+                button[key="toggle_common_vars"] {
+                    padding: 2px 8px !important;
+                    min-height: 28px !important;
+                    height: 28px !important;
+                    font-size: 0.85rem !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                with st.container(border=True):
+                    col1, col2 = st.columns([11, 1])
                     
-                    st.markdown("""<style>
-                    .common-var-code {
-                        background-color: rgba(40, 167, 69, 0.1);
-                        border: 1px solid rgba(40, 167, 69, 0.3);
-                        color: #28a745; /* Green color */
-                        padding: 3px 8px;
-                        border-radius: 8px;
-                        font-family: monospace;
-                        font-size: 0.85rem;
-                        display: block;
-                        margin-bottom: 4px;
-                        white-space: nowrap;
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                    }
-                    .common-var-code:hover { background-color: rgba(40, 167, 69, 0.2); }
-                    </style>""", unsafe_allow_html=True)
-
-                    sorted_vars = sorted(valid_vars, key=lambda x: x.get('name'))
-                    
-                    if not sorted_vars:
-                        st.caption("No valid common variables found in the file.")
-                    else:
-                        num_columns = 3
-                        cols = st.columns(num_columns)
-                        
-                        for i, var in enumerate(sorted_vars):
-                            var_name = var.get('name')
-                            prefix = '&' if var.get('type') == 'dict' else '$' 
-                            
-                            with cols[i % num_columns]:
-                                st.markdown(
-                                    f"<div class='common-var-code' title='{prefix}{{{var_name}}}'>{prefix}{{{var_name}}}</div>", 
-                                    unsafe_allow_html=True
-                                )
-            # --- END: [V3] Common Variables Display ---
-
-
-            # --- Keywords Display (Original) ---
-            if ws_state.get('keywords'):
-                with st.expander(f"Show/Hide Loaded Keywords ({len(ws_state['keywords'])} items)", expanded=True):
-                    all_keywords = ws_state['keywords']
-                    
-                    st.markdown("""
-                        <style>
-                            [data-testid="stExpander"] { margin-bottom: 1px !important; }
-                        </style>
-                    """, unsafe_allow_html=True)
-
-                    categorized = categorize_keywords(all_keywords)
-                    stats = get_category_stats(categorized)
-                    expansion_config = get_expansion_config()
-                    
-                    col_stats1, col_stats2, col_stats3 = st.columns(3)
-                    with col_stats1: st.metric("📊 Total Keywords", stats['total_keywords'])
-                    with col_stats2: st.metric("📁 Categories", stats['total_categories'])
-                    with col_stats3: st.metric("🧩 Others", stats['uncategorized'])
-                    st.markdown("---")
-                    
-                    categories_to_sort = [k for k in categorized.keys() if k != "🧩 Others"]
-                    sorted_categories = sorted(categories_to_sort, key=get_category_priority)
-                    if "🧩 Others" in categorized and categorized["🧩 Others"]:
-                        sorted_categories.append("🧩 Others")
-
-                    mid_point = (len(sorted_categories) + 1) // 2
-                    left_col_categories = sorted_categories[:mid_point]
-                    right_col_categories = sorted_categories[mid_point:]
-                    col1, col2 = st.columns(2)
-
                     with col1:
-                        for category in left_col_categories:
-                            kws = categorized.get(category, [])
-                            if not kws: continue
-                            is_expanded = expansion_config.get(category, False)
-                            with st.expander(f"**{category}**", expanded=is_expanded):
-                                for kw in sorted(kws, key=lambda x: x['name']):
-                                    with st.expander(f"`{kw['name']}`"):
-                                        st.info(f"**Doc:** {kw['doc']}") if kw.get('doc') else st.caption("_No documentation_")
-                                        st.markdown(f"**Args:** {' '.join([f'`{arg['name']}`' for arg in kw.get('args', [])])}" if kw.get('args') else "**Args:** _None_")
-
+                        st.markdown(f"""
+                        <div style='display: flex; align-items: center; gap: 10px;'>
+                            <span style='font-size: 1.05rem; font-weight: 600; color: #28a745;'>
+                                ✅ Common Variables
+                            </span>
+                            <span style='
+                                background: rgba(40, 167, 69, 0.2);
+                                border: 1px solid rgba(40, 167, 69, 0.4);
+                                color: #28a745;
+                                padding: 2px 8px;
+                                border-radius: 12px;
+                                font-size: 0.75rem;
+                                font-weight: 600;
+                            '>
+                                {len(valid_vars)} items
+                            </span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
                     with col2:
-                        for category in right_col_categories:
-                            kws = categorized.get(category, [])
-                            if not kws: continue
-                            is_expanded = expansion_config.get(category, False)
-                            with st.expander(f"**{category}**", expanded=is_expanded):
-                                for kw in sorted(kws, key=lambda x: x['name']):
-                                    with st.expander(f"`{kw['name']}`"):
-                                        st.info(f"**Doc:** {kw['doc']}") if kw.get('doc') else st.caption("_No documentation_")
-                                        st.markdown(f"**Args:** {' '.join([f'`{arg['name']}`' for arg in kw.get('args', [])])}" if kw.get('args') else "**Args:** _None_")
+                        toggle_icon = "▼" if st.session_state.show_common_vars else "▶"
+                        if st.button(
+                            toggle_icon, 
+                            key="toggle_common_vars",
+                            help="Show/Hide",
+                            use_container_width=True
+                        ):
+                            st.session_state.show_common_vars = not st.session_state.show_common_vars
+                            st.rerun()
+                    
+                    if st.session_state.show_common_vars:
+                        st.markdown("---")
+                        
+                        st.markdown("""<style>
+                        .common-var-code {
+                            background-color: rgba(40, 167, 69, 0.1);
+                            border: 1px solid rgba(40, 167, 69, 0.3);
+                            color: #28a745;
+                            padding: 6px 10px;
+                            border-radius: 8px;
+                            font-family: monospace;
+                            font-size: 0.85rem;
+                            display: block;
+                            margin-bottom: 6px;
+                            white-space: nowrap;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            cursor: pointer;
+                            transition: all 0.2s ease;
+                        }
+                        .common-var-code:hover { 
+                            background-color: rgba(40, 167, 69, 0.25);
+                            transform: translateX(2px);
+                        }
+                        </style>""", unsafe_allow_html=True)
+
+                        sorted_vars = sorted(valid_vars, key=lambda x: x.get('name'))
+                        
+                        if not sorted_vars:
+                            st.caption("No valid common variables found in the file.")
+                        else:
+                            num_columns = 3
+                            cols = st.columns(num_columns)
+                            
+                            for i, var in enumerate(sorted_vars):
+                                var_name = var.get('name')
+                                prefix = '&' if var.get('type') == 'dict' else '$' 
+                                
+                                with cols[i % num_columns]:
+                                    st.markdown(
+                                        f"<div class='common-var-code' title='{prefix}{{{var_name}}}'>{prefix}{{{var_name}}}</div>", 
+                                        unsafe_allow_html=True
+                                    )
+
+            # --- Keywords Display ---
+            if ws_state.get('keywords'):
+    
+                all_keywords = ws_state['keywords']
+    
+                if 'show_keywords' not in st.session_state:
+                    st.session_state.show_keywords = False
+                
+                st.markdown("""
+                <style>
+                button[key="toggle_keywords"] {
+                    padding: 2px 8px !important;
+                    min-height: 28px !important;
+                    height: 28px !important;
+                    font-size: 0.85rem !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                with st.container(border=True):
+                    col1, col2 = st.columns([11, 1])
+                    
+                    with col1:
+                        st.markdown(f"""
+                        <div style='display: flex; align-items: center; gap: 10px;'>
+                            <span style='font-size: 1.05rem; font-weight: 600; color: #cbd5e1;'>
+                                📚 Common Keywords
+                            </span>
+                            <span style='
+                                background: rgba(99, 102, 241, 0.2);
+                                border: 1px solid rgba(99, 102, 241, 0.4);
+                                color: #818cf8;
+                                padding: 2px 8px;
+                                border-radius: 12px;
+                                font-size: 0.75rem;
+                                font-weight: 600;
+                            '>
+                                {len(all_keywords)} items
+                            </span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col2:
+                        toggle_icon = "▼" if st.session_state.show_keywords else "▶"
+                        if st.button(
+                            toggle_icon, 
+                            key="toggle_keywords",
+                            help="Show/Hide",
+                            use_container_width=True
+                        ):
+                            st.session_state.show_keywords = not st.session_state.show_keywords
+                            st.rerun()
+                    
+                    if st.session_state.show_keywords:
+                        st.markdown("---")
+                        
+                        categorized = categorize_keywords(all_keywords)
+                        stats = get_category_stats(categorized)
+                        expansion_config = get_expansion_config()
+                        
+                        col_stats1, col_stats2, col_stats3 = st.columns(3)
+                        with col_stats1: st.metric("📊 Total Keywords", stats['total_keywords'])
+                        with col_stats2: st.metric("📁 Categories", stats['total_categories'])
+                        with col_stats3: st.metric("🧩 Others", stats['uncategorized'])
+                        
+                        st.markdown("---")
+                        
+                        categories_to_sort = [k for k in categorized.keys() if k != "🧩 Others"]
+                        sorted_categories = sorted(categories_to_sort, key=get_category_priority)
+                        if "🧩 Others" in categorized and categorized["🧩 Others"]:
+                            sorted_categories.append("🧩 Others")
+
+                        mid_point = (len(sorted_categories) + 1) // 2
+                        left_col_categories = sorted_categories[:mid_point]
+                        right_col_categories = sorted_categories[mid_point:]
+                        col1, col2 = st.columns(2)
+
+                        # LEFT COLUMN
+                        with col1:
+                            for category in left_col_categories:
+                                kws = categorized.get(category, [])
+                                if not kws: continue
+                                
+                                is_expanded = expansion_config.get(category, False)
+                                
+                                with st.expander(f"**{category}** ({len(kws)} keywords)", expanded=is_expanded):
+                                    for kw in sorted(kws, key=lambda x: x['name']):
+                                        with st.expander(f"`{kw['name']}`", expanded=False):
+                                            if kw.get('args'):
+                                                args_str = ', '.join([arg["name"] for arg in kw['args']])
+                                                st.caption(f"**Args:** `{args_str}`")
+                                            else:
+                                                st.caption("**Args:** _None_")
+
+                        # RIGHT COLUMN
+                        with col2:
+                            for category in right_col_categories:
+                                kws = categorized.get(category, [])
+                                if not kws: continue
+                                
+                                is_expanded = expansion_config.get(category, False)
+                                
+                                with st.expander(f"**{category}** ({len(kws)} keywords)", expanded=is_expanded):
+                                    for kw in sorted(kws, key=lambda x: x['name']):
+                                        with st.expander(f"`{kw['name']}`", expanded=False):
+                                            if kw.get('args'):
+                                                args_str = ', '.join([arg["name"] for arg in kw['args']])
+                                                st.caption(f"**Args:** `{args_str}`")
+                                            else:
+                                                st.caption("**Args:** _None_")
 
     # --- RIGHT PANEL: LOCATORS ---
     with panel_grid[1]:
@@ -2221,6 +2753,7 @@ def render_resources_view_new():
         for idx, loc in enumerate(ws_state['locators']):
             if 'id' not in loc or not loc['id']:
                 ws_state['locators'][idx]['id'] = str(uuid.uuid4())
+        
         with st.expander("#### 📝 Locator Staging Area", expanded=True):
             
             html_page_names = [p['name'] for p in ws_state.get('html_pages', [])]
@@ -2238,18 +2771,29 @@ def render_resources_view_new():
                 locators_by_file[filename].append(loc)
 
             st.markdown("<h6>🔒 From Files (Loaded)</h6>", unsafe_allow_html=True)
-            if not locators_by_file:
-                with st.container(border=True):
-                    st.caption("No locators loaded from files yet.")
-            else:
-                for filename in sorted(locators_by_file.keys()):
+            
+            # ✅ แยกแสดงไฟล์ที่ auto-load และ manual upload
+            auto_loaded_files = []
+            manual_loaded_files = []
+            
+            for filename in sorted(locators_by_file.keys()):
+                # เช็คว่าเป็นไฟล์จาก pageobjects หรือไม่
+                if filename.replace(os.sep, '/').startswith('pageobjects/'):
+                    auto_loaded_files.append(filename)
+                else:
+                    manual_loaded_files.append(filename)
+            
+            # ✅ แสดง Auto-loaded files
+            if auto_loaded_files:
+                st.markdown("**🤖 Auto-loaded from `pageobjects` folder:**")
+                for filename in auto_loaded_files:
                     locators_in_file = locators_by_file[filename]
                     
                     with st.expander(f"📄 **{filename}** ({len(locators_in_file)} items)", expanded=False):
                         
                         if st.button(
-                            f"🗑️ Unload locators from '{filename}'", 
-                            key=f"unload_file_{filename.replace('.', '_')}",
+                            f"🗑️ Unload locators from '{os.path.basename(filename)}'", 
+                            key=f"unload_auto_file_{filename.replace('.', '_').replace('/', '_').replace(os.sep, '_')}",
                             width='content',
                             type="secondary"
                         ):
@@ -2279,8 +2823,56 @@ def render_resources_view_new():
                             html_grid += f"<div class='locator-pill' title='{clean_name}'>{clean_name}</div>"
                         html_grid += "</div>"
                         st.markdown(html_grid, unsafe_allow_html=True)
+            
+            # ✅ แสดง Manually uploaded files
+            if manual_loaded_files:
+                if auto_loaded_files:
+                    st.markdown("---")
+                st.markdown("**📤 Manually Uploaded:**")
+                for filename in manual_loaded_files:
+                    locators_in_file = locators_by_file[filename]
+                    
+                    with st.expander(f"📄 **{filename}** ({len(locators_in_file)} items)", expanded=False):
+                        
+                        if st.button(
+                            f"🗑️ Unload locators from '{filename}'", 
+                            key=f"unload_manual_file_{filename.replace('.', '_').replace('/', '_').replace(os.sep, '_')}",
+                            width='content',
+                            type="secondary"
+                        ):
+                            ws_state['locators'] = [
+                                loc for loc in ws_state['locators'] 
+                                if loc.get('page_name') != filename
+                            ]
+                            st.success(f"Unloaded {len(locators_in_file)} locators from '{filename}'.")
+                            st.rerun()
+                       
+                        st.markdown("""
+                            <style>
+                            .locator-grid-container { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+                            .locator-pill {
+                                background-color: rgba(88, 166, 255, 0.1);
+                                border: 1px solid rgba(88, 166, 255, 0.2);
+                                color: #cbd5e1; padding: 5px 10px; border-radius: 12px;
+                                font-family: monospace; font-size: 0.8rem;
+                                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left;
+                            }
+                            </style>
+                        """, unsafe_allow_html=True)
+                        
+                        html_grid = "<div class='locator-grid-container'>"
+                        for loc in sorted(locators_in_file, key=lambda x: x['name']):
+                            clean_name = get_clean_locator_name(loc['name'])
+                            html_grid += f"<div class='locator-pill' title='{clean_name}'>{clean_name}</div>"
+                        html_grid += "</div>"
+                        st.markdown(html_grid, unsafe_allow_html=True)
+            
+            # ถ้าไม่มีไฟล์เลย
+            if not auto_loaded_files and not manual_loaded_files:
+                with st.container(border=True):
+                    st.caption("No locators loaded from files yet.")
 
-
+            # ส่วน HTML Locators (✏️ From HTML (Editable))
             st.markdown("<h6>✏️ From HTML (Editable)</h6>", unsafe_allow_html=True)
             
             html_locators_by_page = {}
@@ -2367,6 +2959,7 @@ def render_resources_view_new():
                                 else:
                                     st.caption("(Empty)")
 
+            # ส่วน Export Options
             st.markdown("---")
             st.subheader("💾 Export Options")
             st.caption("Exports only new locators generated from HTML.")
@@ -2391,7 +2984,6 @@ def render_resources_view_new():
             locators_string = ""
             if html_locators:
                 if all(len(loc['name']) > 0 for loc in html_locators):
-                    # Filter out any locators with empty names before calculating max_len
                     named_locators = [loc for loc in html_locators if loc['name']]
                     if named_locators:
                         max_len = max(len(f"${{{loc['name']}}}") for loc in named_locators) + 4
@@ -2471,7 +3063,7 @@ Resource            ../resources/commonkeywords.resource
                             st.rerun()
                         else:
                             st.error("Failed to create the file.")
-           
+       
         if 'show_file_created_success' in st.session_state and st.session_state.show_file_created_success:
             success_data = st.session_state.show_file_created_success
             st.success(f"✅ Successfully created file at `{success_data['path']}`")

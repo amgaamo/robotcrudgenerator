@@ -2,6 +2,7 @@
 UI Module for the CRUD Generator Tab
 (Complete Code - Hybrid Style with Top-Tabs)
 (Version 3.10 - CSV Step Dialog now stores configuration)
+(MODIFIED: Standardized buttons)
 """
 import streamlit as st
 import numpy as np
@@ -244,39 +245,84 @@ def render_actions_phase(ws):
             render_detail_actions_section(ws)
 
 def render_verification_phase(ws):
-    """Phase 3: Verification - 2 sub-sections"""
+    """Phase 3: Verification - (REVISED) 5 sub-sections"""
     st.markdown("### ✅ Verification Phase")
 
     def set_verify_sub(sub_name):
         st.session_state.verify_active_sub = sub_name
 
+    # --- (แก้ไข) ใช้ state_key ใหม่ (ตรงกับชื่อ list) ---
     if 'verify_active_sub' not in st.session_state:
-        st.session_state.verify_active_sub = 'list'
+        st.session_state.verify_active_sub = 'verify_list_search' # <--- ค่าเริ่มต้นใหม่
     active_sub = st.session_state.verify_active_sub
 
-    sub_col1, sub_col2 = st.columns(2)
+    # --- (แก้ไข) Navigation 5 ปุ่ม (ปรับ args ให้ตรงกับ state_key ใหม่) ---
+    sub_col1, sub_col2, sub_col3, sub_col4, sub_col5 = st.columns([
+        1.2, 1.1, 1, 1, 1 # (ปรับขนาดปุ่ม)
+    ])
     with sub_col1:
-        st.button("📊 Verify Main List", use_container_width=True,
-            type="primary" if active_sub == 'list' else "secondary",
-            on_click=set_verify_sub, args=('list',))
+        st.button("📝 List Search", use_container_width=True,
+            type="primary" if active_sub == 'verify_list_search' else "secondary",
+            on_click=set_verify_sub, args=('verify_list_search',)) # <--- แก้ไข args
     with sub_col2:
-        st.button("🔍 Verify Detail", use_container_width=True,
-            type="primary" if active_sub == 'detail' else "secondary",
-            on_click=set_verify_sub, args=('detail',))
+        st.button("📊 List Table", use_container_width=True,
+            type="primary" if active_sub == 'verify_list_table' else "secondary",
+            on_click=set_verify_sub, args=('verify_list_table',)) # <--- แก้ไข args
+    with sub_col3:
+        st.button("🔘 List Nav", use_container_width=True,
+            type="primary" if active_sub == 'verify_list_nav' else "secondary",
+            on_click=set_verify_sub, args=('verify_list_nav',)) # <--- แก้ไข args
+    with sub_col4:
+        st.button("🔍 Detail Page", use_container_width=True,
+            type="primary" if active_sub == 'verify_detail_page' else "secondary",
+            on_click=set_verify_sub, args=('verify_detail_page',)) # <--- แก้ไข args
+    with sub_col5:
+        st.button("↩️ Detail Back", use_container_width=True,
+            type="primary" if active_sub == 'verify_detail_back' else "secondary",
+            on_click=set_verify_sub, args=('verify_detail_back',)) # <--- แก้ไข args
 
+    # --- (Container logic - ถูกต้องแล้ว) ---
     with st.container(border=True):
-        if active_sub == 'list':
-            render_verify_list_section(ws)
-        elif active_sub == 'detail':
-            render_verify_detail_section(ws)
+        if active_sub == 'verify_list_search':
+            render_verify_list_actions_search(ws)
+        elif active_sub == 'verify_list_table':
+            render_verify_list_verification_table(ws)
+        elif active_sub == 'verify_list_nav':
+            render_verify_list_actions_navigate(ws)
+        elif active_sub == 'verify_detail_page':
+            render_verify_detail_page(ws)
+        elif active_sub == 'verify_detail_back':
+            render_verify_detail_actions_back(ws)
 
 def render_teardown_phase(ws):
-    """Phase 4: Teardown - Simple, no sub-sections"""
+    """Phase 4: Teardown - (REVISED) 2 sub-sections"""
     st.markdown("### 🧹 Teardown Phase")
-    st.info("💡 Clean up after test execution (Logout, Close Browser)")
 
+    # --- (เพิ่ม) State Management ---
+    def set_teardown_sub(sub_name):
+        st.session_state.teardown_active_sub = sub_name
+
+    if 'teardown_active_sub' not in st.session_state:
+        st.session_state.teardown_active_sub = 'suite_teardown'
+    active_sub = st.session_state.teardown_active_sub
+
+    # --- (เพิ่ม) Sub-navigation buttons ---
+    sub_nav_col1, sub_nav_col2 = st.columns(2)
+    with sub_nav_col1:
+        st.button("🧹 Suite Teardown", use_container_width=True,
+            type="primary" if active_sub == 'suite_teardown' else "secondary",
+            on_click=set_teardown_sub, args=('suite_teardown',))
+    with sub_nav_col2:
+        st.button("🔧 Test Teardown", use_container_width=True,
+            type="primary" if active_sub == 'test_teardown' else "secondary",
+            on_click=set_teardown_sub, args=('test_teardown',))
+
+    # --- (เปลี่ยน) Container logic ---
     with st.container(border=True):
-        render_teardown_section(ws)
+        if active_sub == 'suite_teardown':
+            render_suite_teardown_section(ws) # <--- เรียกฟังก์ชันใหม่ 1
+        elif active_sub == 'test_teardown':
+            render_test_teardown_section(ws) # <--- เรียกฟังก์ชันใหม่ 2
 
 
 # ======= INDIVIDUAL SECTION RENDERERS =======
@@ -287,6 +333,13 @@ def _open_api_csv_dialog(section_key):
     st.session_state['api_csv_dialog_context'] = {"key": section_key}
     if 'csv_api_dialog_selection' in st.session_state:
         del st.session_state['csv_api_dialog_selection'] # Clear previous selection
+    st.rerun()
+
+# --- Helper to open KW Factory dialog ---
+def _open_kw_factory_dialog(section_key):
+    _save_current_tab_state()
+    st.session_state['show_kw_factory_dialog'] = True
+    st.session_state['kw_factory_dialog_context'] = {"key": section_key}
     st.rerun()
 
 def render_config_section_v3_8(ws, ws_state):
@@ -335,16 +388,19 @@ def render_suite_setup_section(ws):
         for i, step in enumerate(steps):
             render_step_card_compact(step, i, 'suite_setup', ws, manager, card_prefix="crud")
 
-    # --- Add buttons in columns ---
-    col1, col2 = st.columns(2)
+    # --- (MODIFIED) Add buttons in columns ---
+    col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("➕ Add Step", use_container_width=True, key="crud_add_suite_setup"):
             st.session_state['show_crud_add_dialog'] = True
             st.session_state['crud_add_dialog_context'] = {"key": "suite_setup"}
             st.rerun()
     with col2:
-        if st.button("⚡ Add API/CSV Step", use_container_width=True, key="crud_add_api_csv_setup"):
+        if st.button("⚡ Import KW API/CSV", use_container_width=True, key="crud_add_api_csv_setup"): # Changed label
             _open_api_csv_dialog("suite_setup")
+    with col3: # Added
+        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_setup"):
+            _open_kw_factory_dialog("suite_setup")
 
 def render_test_setup_section(ws):
     """Test Setup Section"""
@@ -359,15 +415,19 @@ def render_test_setup_section(ws):
         for i, step in enumerate(steps):
             render_step_card_compact(step, i, 'test_setup', ws, manager, card_prefix="crud")
 
-    col1, col2 = st.columns(2)
+    # --- (MODIFIED) Add buttons in columns ---
+    col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("➕ Add Test Setup Step", use_container_width=True, key="add_test_setup"):
             st.session_state['show_crud_add_dialog'] = True
             st.session_state['crud_add_dialog_context'] = {"key": "test_setup"}
             st.rerun()
     with col2:
-        if st.button("⚡ Add API/CSV Step", use_container_width=True, key="crud_add_api_csv_test_setup"):
+        if st.button("⚡ Import KW API/CSV", use_container_width=True, key="crud_add_api_csv_test_setup"): # Changed label
             _open_api_csv_dialog("test_setup")
+    with col3: # Added
+        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_test_setup"):
+            _open_kw_factory_dialog("test_setup")
 
 def render_list_actions_section(ws):
     """List Page Actions Section"""
@@ -382,165 +442,228 @@ def render_list_actions_section(ws):
         for i, step in enumerate(steps):
             render_step_card_compact(step, i, 'action_list', ws, manager, card_prefix="crud")
 
+    # --- (MODIFIED) Add buttons in columns ---
     col1, col2 = st.columns(2)
     with col1:
         if st.button("➕ Add List Action Step", use_container_width=True, key="add_action_list"):
             st.session_state['show_crud_add_dialog'] = True
             st.session_state['crud_add_dialog_context'] = {"key": "action_list"}
             st.rerun()
-    with col2:
-        if st.button("⚡ Add API/CSV Step", use_container_width=True, key="crud_add_api_csv_action_list"):
-            _open_api_csv_dialog("action_list")
+    with col2: # Changed
+        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_action_list"):
+            _open_kw_factory_dialog("action_list")
 
 def render_fill_form_section(ws):
-    """Fill Form Section - Manual step addition"""
-    with st.container(key="fill_form_container"):
-        st.markdown("#### ✏️ Fill Form Fields")
-        st.caption("Add fill steps manually or import from Keyword Factory")
+    """Fill Form Section - Reads/Writes to 'action_form'"""
+    st.markdown("#### ✏️ Fill Form Fields")
+    st.caption("Add fill steps manually or import from Keyword Factory")
 
-    # ✅ ดึง steps ทั้งหมดจาก action_detail
-    all_action_steps = ws['steps'].get('action_detail', [])
-    
-    # ✅ กรองเฉพาะ steps ที่ไม่ใช่ navigation buttons
-    excluded_keywords = [
-        'Click button on detail page',
-        'Click Modal Button'
-    ]
-    
-    fill_steps = [
-        s for s in all_action_steps 
-        if s.get('keyword', '') not in excluded_keywords
-    ]
+    # === (แก้ไข) อ่านจาก action_form และไม่กรอง ===
+    section_key = 'action_form' 
+    fill_steps = ws['steps'].get(section_key, []) 
+    # === (สิ้นสุดการแก้ไข) ===
 
     if not fill_steps:
         st.info("No fill steps yet. Click 'Add Fill Step' or 'Import from Keyword Factory' below.")
     else:
-        # แสดง badge แยกประเภท
-        num_common = sum(1 for s in fill_steps if s.get('type') != 'keyword_factory')
-        num_factory = sum(1 for s in fill_steps if s.get('type') == 'keyword_factory')
-        
-        # แสดง steps
+        # (แสดง steps)
         for i, step in enumerate(fill_steps):
-            
-            render_step_card_compact(step, i, 'action_detail', ws, manager, card_prefix="crud")
+            render_step_card_compact(step, i, section_key, ws, manager, card_prefix="crud_form") # (ใช้ section_key)
 
-    # Buttons row
-    col1, col2, col3, col4 = st.columns(4)
+    # --- (แก้ไข) Buttons ชี้ไปที่ action_form ---
+    col1, col2 = st.columns(2)
     with col1:
         if st.button("➕ Add Fill Step", use_container_width=True, key="add_fill_step"):
             _save_current_tab_state()
             st.session_state['show_crud_add_dialog'] = True
-            st.session_state['crud_add_dialog_context'] = {"key": "action_detail", "filter": "fill"}
+            st.session_state['crud_add_dialog_context'] = {"key": section_key, "filter": "fill"} # (ใช้ section_key)
             st.rerun()
     with col2:
-        if st.button("⚡ Add CSV Import", use_container_width=True, key="crud_add_csv_fill"):
-            _save_current_tab_state()
-            _open_api_csv_dialog("action_detail")
-    with col3:
-        if st.button("🔌 Add API Call", use_container_width=True, key="crud_add_api_fill"):
-            _save_current_tab_state()
-            _open_api_csv_dialog("action_detail")
-    with col4:
         if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_fill"):
             _save_current_tab_state()
-            st.session_state['show_kw_factory_dialog'] = True
-            st.session_state['kw_factory_dialog_context'] = {"key": "action_detail"}
-            st.rerun()
+            _open_kw_factory_dialog(section_key) # (ใช้ section_key)
 
 def render_detail_actions_section(ws):
-    """Detail Actions Section"""
+    """Detail Actions Section - Reads/Writes to 'action_detail'"""
     st.markdown("#### 🔘 Other Detail Actions")
     st.caption("Actions AFTER filling form (Save, Submit, Click Modal OK)")
 
-    other_steps = [s for s in ws['steps']['action_detail'] if s['keyword'] != 'Fill in data form']
+    # === (แก้ไข) อ่านจาก action_detail และไม่กรอง ===
+    section_key = 'action_detail'
+    other_steps = ws['steps'].get(section_key, [])
+    # === (สิ้นสุดการแก้ไข) ===
 
     if not other_steps:
         st.info("No other actions. Typically: Click Save, Click Modal OK")
     else:
         for i, step in enumerate(other_steps):
-            render_step_card_compact(step, i, 'action_detail_others', ws, manager, card_prefix="crud")
+            render_step_card_compact(step, i, section_key, ws, manager, card_prefix="crud_detail_actions") # (ใช้ section_key)
 
+    # --- (Buttons ชี้ไปที่ action_detail - ถูกต้องอยู่แล้ว) ---
     col1, col2 = st.columns(2)
     with col1:
         if st.button("➕ Add Detail Action Step", use_container_width=True, key="add_action_detail"):
             _save_current_tab_state()
             st.session_state['show_crud_add_dialog'] = True
-            st.session_state['crud_add_dialog_context'] = {"key": "action_detail"}
+            st.session_state['crud_add_dialog_context'] = {"key": section_key}
             st.rerun()
     with col2:
-        if st.button("⚡ Add API/CSV Step", use_container_width=True, key="crud_add_api_csv_action_detail"):
+        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_action_detail"):
             _save_current_tab_state()
-            _open_api_csv_dialog("action_detail")
+            _open_kw_factory_dialog(section_key)
 
-def render_verify_list_section(ws):
-    """Verify Main List Section (Renders steps in order)"""
-    st.markdown("#### 📊 Verify Main List/Table")
-    st.info("💡 Check if the created item appears in the table")
+# (ฟังก์ชันใหม่ 1)
+def render_verify_list_actions_search(ws):
+    """(Verify Sub) 1. Main List Actions (Search)"""
+    st.markdown("#### 📝 Main List Actions (Search)")
+    st.caption("ขั้นตอนการค้นหาข้อมูลในตารางหลัก (Search, Wait)")
 
-    steps = ws['steps']['verify_list']
+    # --- (แก้ไข) อ่านจาก list ใหม่ และ ไม่กรอง ---
+    section_key = 'verify_list_search' # <-- Key ใหม่
+    search_steps = ws['steps'].get(section_key, [])
+    # --- (สิ้นสุดการแก้ไข) ---
 
-    if not steps:
-        st.warning("No table verification steps found. Generate template first.")
+    if not search_steps:
+        st.info("ไม่พบขั้นตอนการค้นหา (Search, Wait).")
     else:
-        for i, step in enumerate(steps):
-            if step['keyword'] == 'Verify Result of data table':
-                with st.expander(f"🔧 Edit Table Verification (Step {i+1})", expanded=True):
-                    render_step_toolbar(step, i, 'verify_list', len(steps))
-                    render_table_verification_ui(step, ws)
-            else:
-                render_step_card_compact(step, i, 'verify_list', ws, manager, card_prefix="crud")
+        for i, step in enumerate(search_steps):
+            render_step_card_compact(step, i, section_key, ws, manager, card_prefix="crud_vlist_search") # (ใช้ section_key)
 
     st.markdown("---")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("➕ Add Verification Step", use_container_width=True, key="add_verify_list"):
+        if st.button("➕ Add Search/Wait Step", use_container_width=True, key="add_verify_list_search"): # (แก้ชื่อปุ่ม)
             st.session_state['show_crud_add_dialog'] = True
-            st.session_state['crud_add_dialog_context'] = {"key": "verify_list"}
+            st.session_state['crud_add_dialog_context'] = {"key": section_key} # (ใช้ section_key)
             st.rerun()
     with col2:
-        if st.button("⚡ Add API/CSV Step", use_container_width=True, key="crud_add_api_csv_verify_list"):
-            _open_api_csv_dialog("verify_list")
+        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_verify_list_search"):
+            _open_kw_factory_dialog(section_key) # (ใช้ section_key)
 
-def render_verify_detail_section(ws):
-    """Verify Detail Section - Manual step addition"""
+# (ฟังก์ชันใหม่ 2)
+def render_verify_list_verification_table(ws):
+    """(Verify Sub) 2. Main List Verification (Data Table)"""
+    st.markdown("#### 📊 Main List Verification (Data Table)")
+    st.caption("ขั้นตอนการตรวจสอบผลลัพธ์ในตาราง")
+
+    # --- (แก้ไข) อ่านจาก list ใหม่ และ ไม่กรอง ---
+    section_key = 'verify_list_table' # <-- Key ใหม่
+    all_table_steps = ws['steps'].get(section_key, [])
+    # --- (สิ้นสุดการแก้ไข) ---
+    
+    if not all_table_steps:
+        # (ข้อความนี้จะแสดงเฉพาะตอน List ว่างจริงๆ)
+        st.warning("ไม่พบขั้นตอนการตรวจสอบตาราง.") 
+    else:
+        # (แสดงผลทุก Step ที่อยู่ใน List นี้)
+        for i, step in enumerate(all_table_steps):
+            if step['keyword'] == 'Verify Result of data table':
+                with st.expander(f"🔧 Edit Table Verification (Step {i+1})", expanded=True):
+                    # Pass the correct section_key
+                    render_step_toolbar(step, i, section_key, len(all_table_steps)) 
+                    render_table_verification_ui(step, ws)
+            else:
+                # (เผื่อผู้ใช้ Add Step อื่นเข้ามา)
+                render_step_card_compact(step, i, section_key, ws, manager, card_prefix="crud_vlist_table")
+
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("➕ Add Table Verify Step", use_container_width=True, key="add_verify_list_table"): # (แก้ชื่อปุ่ม)
+            st.session_state['show_crud_add_dialog'] = True
+            st.session_state['crud_add_dialog_context'] = {"key": section_key} # (ใช้ section_key)
+            st.rerun()
+    with col2:
+        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_verify_list_table"):
+            _open_kw_factory_dialog(section_key) # (ใช้ section_key)
+
+# (ฟังก์ชันใหม่ 3)
+def render_verify_list_actions_navigate(ws):
+    """(Verify Sub) 3. Main List Actions (Navigate to Detail)"""
+    st.markdown("#### 🔘 Main List Actions (Navigate to Detail)")
+    st.caption("ขั้นตอนการคลิกปุ่ม View/Edit เพื่อไปหน้า Detail")
+
+    # --- (แก้ไข) อ่านจาก list ใหม่ และ ไม่กรอง ---
+    section_key = 'verify_list_nav' # <-- Key ใหม่
+    nav_steps = ws['steps'].get(section_key, [])
+    # --- (สิ้นสุดการแก้ไข) ---
+
+    if not nav_steps:
+        st.info("ไม่พบขั้นตอนการคลิกปุ่ม View/Edit.")
+    else:
+        for i, step in enumerate(nav_steps):
+            render_step_card_compact(step, i, section_key, ws, manager, card_prefix="crud_vlist_nav") # (ใช้ section_key)
+
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("➕ Add Navigation Step", use_container_width=True, key="add_verify_list_nav"):
+            st.session_state['show_crud_add_dialog'] = True
+            st.session_state['crud_add_dialog_context'] = {"key": section_key} # (ใช้ section_key)
+            st.rerun()
+    with col2:
+        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_verify_list_nav"):
+            _open_kw_factory_dialog(section_key) # (ใช้ section_key)
+
+# (ฟังก์ชันใหม่ 4)
+def render_verify_detail_page(ws):
+    """(Verify Sub) 4. Verify Detail Page"""
     st.markdown("#### 🔍 Verify Detail Page")
     st.caption("Add verify steps manually or import from Keyword Factory")
 
-    verify_steps = [s for s in ws['steps']['verify_detail'] if s['keyword'] == 'Verify data form']
-    other_steps = [s for s in ws['steps']['verify_detail'] if s['keyword'] != 'Verify data form']
+    # --- (แก้ไข) อ่านจาก list ใหม่ และ ไม่กรอง ---
+    section_key = 'verify_detail_page' # <-- Key ใหม่
+    verify_steps = ws['steps'].get(section_key, [])
+    # --- (สิ้นสุดการแก้ไข) ---
 
-    # Display verify steps
-    if verify_steps:
-        st.markdown("##### Verification Steps")
-        for i, step in enumerate(verify_steps):
-            render_step_card_compact(step, i, 'verify_detail_verify', ws, manager, card_prefix="crud")
-    
-    # Display other navigation steps
-    if other_steps:
-        st.markdown("---")
-        st.markdown("##### Navigation Steps")
-        for i, step in enumerate(other_steps):
-            render_step_card_compact(step, i, 'verify_detail_others', ws, manager, card_prefix="crud")
-
-    if not verify_steps and not other_steps:
+    if not verify_steps:
         st.info("No verify steps yet. Click 'Add Verify Step' or 'Import from Keyword Factory' below.")
+    else:
+        for i, step in enumerate(verify_steps):
+            render_step_card_compact(step, i, section_key, ws, manager, card_prefix="crud_vdetail_page") # (ใช้ section_key)
 
-    # Buttons row
+    # --- Buttons ---
     st.markdown("---")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("➕ Add Verify Step", use_container_width=True, key="add_verify_step"):
+        if st.button("➕ Add Verify Step", use_container_width=True, key="add_verify_detail_page"):
             st.session_state['show_crud_add_dialog'] = True
-            st.session_state['crud_add_dialog_context'] = {"key": "verify_detail", "filter": "verify"}
+            st.session_state['crud_add_dialog_context'] = {"key": section_key, "filter": "verify"} # (ใช้ section_key)
             st.rerun()
     with col2:
-        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_verify"):
-            st.session_state['show_kw_factory_dialog'] = True
-            st.session_state['kw_factory_dialog_context'] = {"key": "verify_detail"}
-            st.rerun()
+        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_verify_detail_page"):
+            _open_kw_factory_dialog(section_key) # (ใช้ section_key)
 
-def render_teardown_section(ws):
-    """Teardown Section"""
+# (ฟังก์ชันใหม่ 5)
+def render_verify_detail_actions_back(ws):
+    """(Verify Sub) 5. Verify Detail Actions (Back)"""
+    st.markdown("#### ↩️ Detail Actions (Back)")
+    st.caption("ขั้นตอนการคลิกปุ่ม Back เพื่อกลับไปหน้า List")
+
+    # --- (แก้ไข) อ่านจาก list ใหม่ และ ไม่กรอง ---
+    section_key = 'verify_detail_back' # <-- Key ใหม่
+    back_steps = ws['steps'].get(section_key, [])
+    # --- (สิ้นสุดการแก้ไข) ---
+
+    if not back_steps:
+        st.info("ไม่พบขั้นตอนการคลิกปุ่ม Back.")
+    else:
+        for i, step in enumerate(back_steps):
+            render_step_card_compact(step, i, section_key, ws, manager, card_prefix="crud_vdetail_back") # (ใช้ section_key)
+
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("➕ Add Back Step", use_container_width=True, key="add_verify_detail_back"): # (แก้ชื่อปุ่ม)
+            st.session_state['show_crud_add_dialog'] = True
+            st.session_state['crud_add_dialog_context'] = {"key": section_key} # (ใช้ section_key)
+            st.rerun()
+    with col2:
+        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_verify_detail_back"):
+            _open_kw_factory_dialog(section_key) # (ใช้ section_key)
+
+def render_suite_teardown_section(ws):
+    """Suite Teardown Section (แยกออกมา)"""
     st.markdown("#### 🧹 Suite Teardown Steps")
     st.caption("Runs ONCE after all tests (Logout, Close Browser)")
 
@@ -552,19 +675,24 @@ def render_teardown_section(ws):
         for i, step in enumerate(steps):
             render_step_card_compact(step, i, 'suite_teardown', ws, manager, card_prefix="crud")
 
-    col1, col2 = st.columns(2)
+    # --- (มาจากโค้ดเดิม) 3 ปุ่มสำหรับ 'suite_teardown' ---
+    col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("➕ Add Teardown Step", use_container_width=True, key="crud_add_suite_teardown"):
             st.session_state['show_crud_add_dialog'] = True
             st.session_state['crud_add_dialog_context'] = {"key": "suite_teardown"}
             st.rerun()
     with col2:
-        if st.button("⚡ Add API/CSV Step", use_container_width=True, key="crud_add_api_csv_suite_teardown"):
+        if st.button("⚡ Import KW API/CSV", use_container_width=True, key="crud_add_api_csv_suite_teardown"):
             _open_api_csv_dialog("suite_teardown")
+    with col3:
+        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_suite_teardown"):
+            _open_kw_factory_dialog("suite_teardown")
 
-    st.markdown("---")
-    st.markdown("##### Test Teardown (Optional)")
-    st.caption("Runs AFTER EACH test case")
+def render_test_teardown_section(ws):
+    """Test Teardown Section (แยกออกมา)"""
+    st.markdown("#### 🔧 Test Teardown Steps")
+    st.caption("Runs AFTER EACH test case (Optional)")
 
     test_td_steps = ws['steps']['test_teardown']
     if not test_td_steps:
@@ -572,6 +700,20 @@ def render_teardown_section(ws):
     else:
         for i, step in enumerate(test_td_steps):
             render_step_card_compact(step, i, 'test_teardown', ws, manager, card_prefix="crud")
+
+    # --- (มาจากโค้ดเดิม) 3 ปุ่มสำหรับ 'test_teardown' ---
+    col_td1, col_td2, col_td3 = st.columns(3)
+    with col_td1:
+        if st.button("➕ Add Test Teardown Step", use_container_width=True, key="crud_add_test_teardown"):
+            st.session_state['show_crud_add_dialog'] = True
+            st.session_state['crud_add_dialog_context'] = {"key": "test_teardown"}
+            st.rerun()
+    with col_td2:
+        if st.button("⚡ Import KW API/CSV", use_container_width=True, key="crud_add_api_csv_test_teardown"):
+            _open_api_csv_dialog("test_teardown")
+    with col_td3:
+        if st.button("🏭 Import from KW Factory", use_container_width=True, key="crud_import_kw_test_teardown"):
+            _open_kw_factory_dialog("test_teardown")
 
 # ======= TOOLBAR HELPER =======
 def render_step_toolbar(step, index, section_key, total_steps):
@@ -706,11 +848,12 @@ def render_crud_add_step_dialog():
     )
 
 # --- DIALOG: API/CSV Steps (UPDATED V3.10 - Stores Config) ---
-@st.dialog("Add Data Source or API Step", width="large")
+@st.dialog("Import Data Source or API Step", width="large") # (MODIFIED) Changed title
 def render_api_csv_step_dialog():
     """
     Dialog to select and add CSV Data Source or API Service steps.
     (V3.11 - Enhanced with value insertion, Back button)
+    (MODIFIED: Title)
     """
     ws_state = st.session_state.studio_workspace
     context = st.session_state.get('api_csv_dialog_context', {})
@@ -874,55 +1017,7 @@ def render_api_csv_step_dialog():
 # ======= DIALOG: Import from Keyword Factory =======
 @st.dialog("Import Keyword from Keyword Factory", width="large", dismissible=False)
 def render_kw_factory_import_dialog():
-    
-    # Inject CSS
-    st.markdown("""
-    <style>
-        .keyword-column {
-            background: linear-gradient(145deg, #2d333b, #22272e);
-            border: 1px solid #444c56;
-            border-left: 3px solid #539bf5;
-            border-radius: 8px;
-            padding: 1.5rem;
-            height: 70vh;
-            overflow-y: auto;
-        }
-        
-        .config-column {
-            background: linear-gradient(145deg, #2d333b, #22272e);
-            border: 1px solid #444c56;
-            border-left: 3px solid #768390;
-            border-radius: 8px;
-            padding: 1.5rem;
-            height: 70vh;
-            overflow-y: auto;
-        }
-        
-        .keyword-button {
-            width: 100%;
-            text-align: left !important;
-            padding: 0.75rem 1rem !important;
-            margin-bottom: 0.5rem;
-            background: #161b22 !important;
-            border: 1px solid #30363d !important;
-            border-radius: 6px !important;
-            transition: all 0.2s ease !important;
-        }
-        
-        .keyword-button:hover {
-            background: #1f2937 !important;
-            border-color: #539bf5 !important;
-            transform: translateX(4px);
-        }
-        
-        .keyword-button-selected {
-            background: linear-gradient(135deg, #1f4788, #0d2d5e) !important;
-            border-color: #539bf5 !important;
-            border-left: 3px solid #539bf5 !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
+      
     context = st.session_state.get('kw_factory_dialog_context', {})
     section_key = context.get("key")
 
@@ -994,6 +1089,7 @@ def render_kw_factory_import_dialog():
             if key in st.session_state:
                 del st.session_state[key]
         
+        _restore_tab_state() # (MODIFIED) Restore tab state
         st.rerun()
 
     # Back Button
@@ -1013,11 +1109,11 @@ def render_kw_factory_import_dialog():
     # Two Column Layout
     left_col, right_col = st.columns([0.45, 0.55], gap="medium")
 
-    # ========== LEFT COLUMN: Keyword Selection ==========
+# ========== LEFT COLUMN: Keyword Selection ==========
     with left_col:
         st.markdown("### 🔍 Select Keyword")
         
-        # Search
+        # Search (เหมือนเดิม)
         search_query = st.text_input(
             "Search", 
             key="search_factory_kw",
@@ -1027,7 +1123,7 @@ def render_kw_factory_import_dialog():
 
         st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
 
-        # Filter keywords
+        # Filter keywords (เหมือนเดิม)
         filtered_keywords = [
             kw for kw in factory_keywords 
             if search_query in kw.get('name', '').lower()
@@ -1036,61 +1132,73 @@ def render_kw_factory_import_dialog():
         if not filtered_keywords:
             st.warning(f"No keywords found matching '{search_query}'")
         else:           
+            # === (เริ่มแก้ไขการแสดงผลปุ่ม) ===
+            st.markdown("""
+                <style>
+                    /* Target buttons within the dialog's left column */
+                    div[data-testid="stDialog"] .stButton button[kind="secondary"] {
+                        justify-content: flex-start !important; /* Align text left */
+                        text-align: left !important;
+                    }
+                </style>
+            """, unsafe_allow_html=True)
             for kw in filtered_keywords:
                 kw_name = kw.get('name', 'Untitled Keyword')
                 kw_id = kw.get('id', kw_name)
-                kw_args = kw.get('args', [])
+                # (ลบ kw_args ออก ไม่ใช้แล้ว)
                 
                 # Check if selected
                 is_selected = selected_kw and selected_kw.get('id') == kw_id
                 
-                # Keyword button with visual feedback
-                col1, col2 = st.columns([0.85, 0.15])
-                with col1:
-                    button_label = f"🔧 {kw_name}"
-                with col2:
-                    if kw_args:
-                        st.caption(f"{len(kw_args)} args")
-                
-                # Button with selected state
-                button_type = "primary" if is_selected else "secondary"
+                # --- ใช้ Style คล้าย dialog_commonkw ---
+                # (ใช้ icon + ชื่อ)
+                icon = "⚙️" # Assume all factory keywords might have args
+                button_label = f"{icon}  {kw_name}" 
+                button_key = f"select_kw_{kw_id}"
+
+                # ใช้ st.button แบบ secondary เสมอ
                 if st.button(
                     button_label,
-                    key=f"select_kw_{kw_id}",
+                    key=button_key,
                     use_container_width=True,
-                    type=button_type
+                    type="secondary" # <-- ใช้ secondary เสมอ
                 ):
                     st.session_state.selected_factory_kw = kw
                     st.rerun()
-            
-            st.markdown('</div>', unsafe_allow_html=True)
 
-    # ========== RIGHT COLUMN: Configuration ==========
+                # --- เพิ่ม CSS สำหรับ Highlight ปุ่มที่เลือก ---
+                # (เลียนแบบ dialog_commonkw แต่ใช้ key ของ dialog นี้)
+                if is_selected:
+                    button_test_id = f"stButton-secondary-{button_key}"
+                    st.markdown(f'<style>.stButton button[data-testid="{button_test_id}"] {{ background-color: #316dca; border-color: #539bf5; color: #ffffff; font-weight: 600; box-shadow: 0 0 0 1px #539bf5; }}</style>', unsafe_allow_html=True)
+            # === (สิ้นสุดการแก้ไขการแสดงผลปุ่ม) ===
+
+# ========== RIGHT COLUMN: Configuration ==========
     with right_col:
-        st.markdown("### ⚙️ Configure Arguments")
+        st.markdown(
+                "<div style='font-size: 25px; font-weight: 600; margin-bottom: 0.5rem;'>⚙️ Configure Arguments</div>", 
+                unsafe_allow_html=True
+            )
         
         if not selected_kw:
             st.info("👈 Select a keyword from the left to configure its arguments")
         else:
-            # Display keyword info
-            st.markdown(f"**Selected:** `{selected_kw.get('name')}`")
-            
-            # Display keyword info
-            st.markdown(f"**Selected:** `{selected_kw.get('name')}`")
-            kw_doc = selected_kw.get('doc', '')
-            if kw_doc:
-                st.caption(kw_doc)
-            
-            st.markdown("---")
-            
+            # === (2. Style Keyword Info like the image) ===
+            with st.container(border=True): # Wrap in a bordered container
+                # Use slightly larger font for name, keep doc as caption
+                st.markdown(
+                    f"<div style='font-size: 1.3rem; font-weight: 600; color: #1E90FF; margin-bottom: 0.2rem;'>{selected_kw.get('name')}</div>",
+                    unsafe_allow_html=True
+                )
+                kw_doc = selected_kw.get('doc', '')
+                if kw_doc:
+                    st.caption(kw_doc)
+                        
             kw_args = selected_kw.get('args', [])
             
             if not kw_args:
                 st.info("ℹ️ This keyword has no arguments")
-            else:
-                st.markdown(f"**Arguments ({len(kw_args)}):**")
-                st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
-                
+            else:              
                 # CSV Quick Insert
                 csv_keywords = extract_csv_datasource_keywords(ws_state)
                 if csv_keywords and kw_args:
@@ -1229,7 +1337,8 @@ def render_kw_factory_import_dialog():
                 args_dict = {}
                 for i, arg in enumerate(kw_args):
                     arg_name = arg.get('name', '')
-                    key = f"kw_factory_arg_{selected_kw['id']}_{arg_name}_{i}"
+                    clean_arg_name = arg_name.strip('${}') # (MODIFIED) Clean name
+                    key = f"kw_factory_arg_{selected_kw['id']}_{clean_arg_name}_{i}" # (MODIFIED) Use clean name in key
                     args_dict[arg_name] = st.session_state.get(key, '')
                 
                 # Create step
@@ -1252,8 +1361,9 @@ def render_kw_factory_import_dialog():
 # ======= DIALOG: Fill Form =======
 @st.dialog("จัดการฟอร์มทั้งหมด (Fill Form Fields)", width="large")
 def render_fill_form_dialog():
-    """FIXED: ใช้ปุ่มธรรมดา + rerun แทน pending logic"""
-    section_key = "action_detail"
+    """Works with 'action_form'"""
+    section_key = "action_form" # <--- แก้ไขตรงนี้
+    ws = manager._get_workspace() # <-- Added _get_workspace() for consistency
     ws_state = st.session_state.studio_workspace
     all_locators = ws_state.get('locators', [])
 
@@ -1268,7 +1378,7 @@ def render_fill_form_dialog():
 
     search_query = st.text_input("🔍 ค้นหาฟิลด์", key="fill_form_search").lower()
     if st.button("➕ เพิ่ม Field ใหม่", use_container_width=True):
-        manager.add_fill_form_step(section_key)
+        manager.add_fill_form_step(section_key) # <-- Use section_key
         st.rerun()
     st.markdown("---")
 
@@ -1326,11 +1436,12 @@ def render_fill_form_dialog():
                             if not quick_row:
                                 st.warning("Please enter a 'Row Key'")
                             elif insert_syntax:
-                                all_fill_steps = [s for s in manager._get_workspace()['steps']['action_detail'] 
-                                                if s['keyword'] == 'Fill in data form']
+                                # (แก้ไข) อ่าน steps จาก section_key ('action_form')
+                                all_fill_steps_for_apply = [s for s in manager._get_workspace()['steps'][section_key] 
+                                                        if s['keyword'] == 'Fill in data form']
                                 
                                 applied_count = 0
-                                for step in all_fill_steps:
+                                for step in all_fill_steps_for_apply: # <-- Use filtered list
                                     step_id = step['id']
                                     current_value = step['args'].get('value', '')
                                     if not current_value:
@@ -1346,6 +1457,7 @@ def render_fill_form_dialog():
             st.info("No CSV data sources found. Add them in Test Data tab.")
 
     with st.form(key="fill_form_chunked_editor"):
+        # (แก้ไข) อ่าน steps จาก section_key ('action_form')
         all_fill_steps = [s for s in manager._get_workspace()['steps'][section_key] if s['keyword'] == 'Fill in data form']
         form_data = {}
         steps_to_delete = []
@@ -1403,8 +1515,10 @@ def render_fill_form_dialog():
                             loc_index = 0
                             if all_locators:
                                 try: 
-                                    loc_index = [loc.get('name') for loc in all_locators].index(selected_loc_obj.get('name'))
-                                except (ValueError, AttributeError): 
+                                    loc_name_to_find = selected_loc_obj.get('name') if isinstance(selected_loc_obj, dict) else selected_loc_obj
+                                    if loc_name_to_find: # Added check
+                                        loc_index = [loc.get('name') for loc in all_locators].index(loc_name_to_find)
+                                except (ValueError, AttributeError, TypeError): # Added TypeError
                                     loc_index = 0
                             
                             # ✅ รับค่าโดยตรงจาก return value
@@ -1423,6 +1537,7 @@ def render_fill_form_dialog():
                                 current_type = 'Switch'
                             elif step_args.get('is_checkbox_type'): 
                                 current_type = 'Checkbox'
+                            # (Add handling for Select type if needed based on locator suffix)
                             
                             try: 
                                 type_index = ['Text', 'Select', 'Checkbox', 'Switch'].index(current_type)
@@ -1457,8 +1572,10 @@ def render_fill_form_dialog():
                                 switch_loc_index = 0
                                 if all_locators:
                                     try: 
-                                        switch_loc_index = [loc.get('name') for loc in all_locators].index(selected_switch_loc_obj.get('name'))
-                                    except (ValueError, AttributeError): 
+                                        switch_loc_name_to_find = selected_switch_loc_obj.get('name') if isinstance(selected_switch_loc_obj, dict) else selected_switch_loc_obj
+                                        if switch_loc_name_to_find: # Added check
+                                            switch_loc_index = [loc.get('name') for loc in all_locators].index(switch_loc_name_to_find)
+                                    except (ValueError, AttributeError, TypeError): # Added TypeError
                                         switch_loc_index = 0
                                 
                                 # ✅ รับค่าโดยตรงจาก return value
@@ -1471,8 +1588,9 @@ def render_fill_form_dialog():
                                     label_visibility="collapsed", 
                                     help="เลือก Locator ที่ใช้สำหรับติ๊ก Switch"
                                 )
-                            else:
-                                st.caption("(No value needed)")
+                            # (Checkbox does not need a value input here)
+                            # else: 
+                            #     st.caption("(No value needed)") # Removed for Checkbox
 
                         with cols[3]:
                             if st.checkbox("del", key=f"del_{step_id}", label_visibility="collapsed"):
@@ -1488,42 +1606,58 @@ def render_fill_form_dialog():
         if submitted_save:
             if steps_to_delete:
                 for step_id in steps_to_delete: 
-                    manager.delete_step(section_key, step_id)
+                    manager.delete_step(section_key, step_id) # <-- Use section_key
             
             updates_to_save = {}
+            # (Re-fetch steps in case some were deleted)
+            current_steps_in_section = [s for s in manager._get_workspace()['steps'][section_key] if s['keyword'] == 'Fill in data form']
+            
             for step_id, data in form_data.items():
                 if step_id not in steps_to_delete:
-                    original_step = next((s for s in all_fill_steps if s['id'] == step_id), None)
+                    # Find original step based on current state after potential deletions
+                    original_step = next((s for s in current_steps_in_section if s['id'] == step_id), None)
                     if original_step:
                         original_step_args = original_step.get('args', {})
+                        
+                        # Build new args based on form data for this step_id
                         new_args_for_step = {
                             "locator_field": data.get('locator_field'),
-                            "value": data.get('value', ''),
-                            "locator_switch_checked": data.get('locator_switch_checked'),
+                            "value": data.get('value', ''), # Default empty if not Text/Select
+                            "locator_switch_checked": data.get('locator_switch_checked'), # Default None if not Switch
                             "is_checkbox_type": data.get('input_type') == 'Checkbox',
                             "is_switch_type": data.get('input_type') == 'Switch',
-                            "select_attribute": original_step_args.get('select_attribute', 'label'),
+                            # Preserve potentially existing args not directly edited here
+                            "select_attribute": original_step_args.get('select_attribute', 'label'), 
                             "is_ant_design": original_step_args.get('is_ant_design', False)
                         }
-                        
+                        # Clear value if it's not Text/Select
+                        if new_args_for_step['is_checkbox_type'] or new_args_for_step['is_switch_type']:
+                            new_args_for_step['value'] = '' # Or keep original? Let's clear for now.
+                        # Clear switch locator if not Switch type
+                        if not new_args_for_step['is_switch_type']:
+                             new_args_for_step['locator_switch_checked'] = None # Or keep original? Let's clear.
+
+                        # Compare with original args to see if update is needed
                         if new_args_for_step != original_step_args:
                             updates_to_save[step_id] = new_args_for_step
 
             if updates_to_save:
+                # Use batch update if available, otherwise loop
                 if hasattr(manager, 'batch_update_step_args'):
-                    manager.batch_update_step_args(section_key, updates_to_save)
-                else:
+                    manager.batch_update_step_args(section_key, updates_to_save) # <-- Use section_key
+                else: # Fallback if batch update doesn't exist
                     for step_id, new_args in updates_to_save.items():
-                        manager.update_step_args(section_key, step_id, new_args)
+                        manager.update_step_args(section_key, step_id, new_args) # <-- Use section_key
 
+            # Close dialog state and clean up search/CSV state
             st.session_state.show_fill_form_dialog = False
             if 'fill_form_search' in st.session_state: 
                 del st.session_state.fill_form_search
             
-            # Clear CSV states
             csv_keys = [k for k in st.session_state.keys() if k.startswith('quick_csv_') and '_fill' in k]
             for key in csv_keys:
-                del st.session_state[key]
+                if key in st.session_state: # Check if key exists before deleting
+                    del st.session_state[key]
             
             st.rerun()
 
@@ -1531,6 +1665,11 @@ def render_fill_form_dialog():
             st.session_state.show_fill_form_dialog = False
             if 'fill_form_search' in st.session_state: 
                 del st.session_state.fill_form_search
+            # Clean up CSV state on cancel too
+            csv_keys = [k for k in st.session_state.keys() if k.startswith('quick_csv_') and '_fill' in k]
+            for key in csv_keys:
+                 if key in st.session_state:
+                     del st.session_state[key]
             st.rerun()
 
 # ======= DIALOG: Verify Detail (FIXED - No Pending Logic) =======
