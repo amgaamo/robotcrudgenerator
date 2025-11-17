@@ -14,21 +14,34 @@ from pathlib import Path
 # ===================================================================
 
 FILL_FORM_DEFAULTS = {
-    'is_switch_type': False,
-    'is_checkbox_type': False,
-    'select_attribute': 'label',
-    'is_ant_design': False,
+    'is_switchtype': False,
+    'is_checkboxtype': False,
+    'sel_attr': 'label',
+    'is_antdesign': False,
     'locator_switch_checked': '${EMPTY}'
 }
 
 VERIFY_FORM_DEFAULTS = {
-    'select_attribute': 'label',
-    'ignorcase': False,         # Correct key name is 'ignorcase'
-    'antdesign': False,         # Correct key name is 'antdesign'
-    'is_switchtype': False,     # Correct key name is 'is_switchtype'
+    'sel_attr': 'label',
+    'ignorcase': False,
+    'antdesign': False,
+    'is_switchtype': False,
     'locator_switch_checked': '${EMPTY}',
-    'is_skipfield': False       # Correct key name is 'is_skipfield'
+    'is_skipfield': False
 }
+
+# --- START: MODIFIED (Remove 'is_check', Add 'ignorcase') ---
+VERIFY_DETAIL_DEFAULTS = {
+    'assertion': 'should be',    # Default assertion type
+    # 'is_check': False,           # REMOVED
+    'is_switch_type': False,     # Is switch type
+    'is_antdesign': False,       # Is Ant Design component
+    'locator_switch_checked': '${EMPTY}',  # Switch checked locator
+    'is_select': False,          # Is Select dropdown
+    'select_attribute': 'label', # Default select attribute
+    'ignorcase': False           # NEW: Ignore case
+}
+# --- END: MODIFIED ---
 
 def get_clean_locator_name(raw_name):
     """Removes Robot Framework variable syntax ${...} for cleaner display."""
@@ -216,27 +229,7 @@ def parse_robot_variables(content: str):
                     dict_value = {}
                     combined_lines = " ".join(var_data['value_lines'])
                     
-                    # ใช้ regex findall เพื่อจับ key=value ที่อาจมี space
-                    # (?:^|\s+) = non-capturing group:
-                    #   - ^ = or start of string
-                    #   - \s+ = or one or more spaces
-                    # ([^=\s]+) = Group 1: key (anything not = or space)
-                    # =
-                    # (.*?(?=\s+[^=\s]+=|\s*$)) = Group 2: value
-                    #   - .*? = non-greedy match of the value
-                    #   - (?=...) = positive lookahead (ends before...)
-                    #   - \s+[^=\s]+= = ...next key= (e.g. " key2=")
-                    #   - | = or
-                    #   - \s*$ = ...end of the string
-                    
-                    # Regex ที่ง่ายกว่าและรองรับค่าที่มี space
-                    # (แยกตาม '  ' (2+ spaces) หรือ '='
-                    # แต่วิธีที่ปลอดภัยที่สุดคือการ parse ทีละบรรทัด
-                    
                     for line in var_data['value_lines']:
-                        # แยก key=value ที่อาจอยู่บรรทัดเดียวกัน
-                        # ใช้ regex split ตาม space ที่มากกว่า 2 (เว้นแต่จะอยู่ใน quote)
-                        # เพื่อความเรียบง่าย: สมมติว่า 1 key-value ต่อ 1 line (สำหรับ dict)
                         
                         if '=' in line:
                             # Split on the *first* equals sign
@@ -339,21 +332,21 @@ def parse_data_sources(content: str):
 # ===== 4. Robot Framework Formatting (From test_flow_manager.py & ui_common.py)
 # ===================================================================
 
+# --- START: MODIFIED (V18 - Always Named, Skip Defaults) ---
 def format_robot_step_line(step):
     """
     Helper to format a single step object into string with named arguments.
-    🔧 FIXED V14: Refined boolean formatting and argument name omission logic
-                  to ensure 'exp_value' and other arguments are always included correctly.
+    🔧 FIXED V18: Always uses named arguments (key=value) and
+                  skips arguments that match their default 
+                  (e.g., boolean False, sel_attr='label').
     """
     keyword = step.get('keyword', '')
     args = step.get('args', {})
     kw_padding = "    " # 4 spaces
 
     # --- Handle special table verification keyword ---
-    # (Assuming this part is correct or less critical for now)
     if keyword.strip() == 'Verify Result of data table':
-        # ... (Existing logic for Verify Result of data table - ensure it uses _format_value_for_robot) ...
-        # Simplified example - Ensure this section also uses _format_value_for_robot
+        # (This logic might need updating to new bool format, but focusing on fill/verify)
         fixed_args = {}
         col_args = {}
         for k, v in args.items():
@@ -367,13 +360,11 @@ def format_robot_step_line(step):
         for name in fixed_arg_order:
              value = fixed_args[name]
              robot_name = 'ignore_case' if name == 'ignorcase' else name
-             formatted_val = _format_value_for_robot(value)
+             formatted_val = _format_value_for_robot(value) # Helper now returns lowercase bools
              if formatted_val is not None:
                   final_formatted_value = formatted_val
                   # Apply specific boolean formatting
-                  if isinstance(value, bool): final_formatted_value = '${True}' if value else '${False}'
-                  elif formatted_val == 'True': final_formatted_value = '${True}'
-                  elif formatted_val == 'False': final_formatted_value = '${False}'
+                  if isinstance(value, bool): final_formatted_value = 'true' if value else 'false'
                   # Append arg=value
                   first_line_parts.append(f"{robot_name}={final_formatted_value}")
 
@@ -385,105 +376,88 @@ def format_robot_step_line(step):
         return final_output
     # --- End special handling ---
 
-    # --- Check for Keywords with Defaults ---
-    is_fill_form_kw = (keyword == "Fill in data form")
-    is_verify_form_kw = (keyword == "Verify data form")
-
     # --- Standard keyword formatting ---
     parts = [keyword]
     valid_args_with_none = args.copy()
 
-    # Define argument order priority
+    # Check if this is Fill or Verify form keyword
+    is_fill_form = 'fill in data form' in keyword.lower()
+    is_verify_form = 'verify data form' in keyword.lower()
+
+    # --- (Arg order sorting) ---
     arg_order = sorted(valid_args_with_none.keys(), key=lambda x: (
-        0 if 'locator' in x.lower() else
-        1 if x == 'main_menu' else
-        2 if x == 'submenu' else
-        3 if x in ['exp_value', 'value'] else
-        4 # Other args
+        0 if x.lower() == 'locator_field' else    # Priority 0
+        1 if x.lower() == 'value' else         # Priority 1 (for Fill Form)
+        2 if x.lower() == 'exp_value' else      # Priority 2 (for Verify Form)
+        3 if x.lower() == 'assertion' else      # Priority 3 (for Verify Form)
+        4 if 'locator' in x.lower() else   # Fallback for other locators
+        5 if x == 'main_menu' else
+        6 if x == 'submenu' else
+        7 # Other args
     ))
+    # ---
 
     # Iterate through arguments in defined order
     for arg_name in arg_order:
-        value = valid_args_with_none[arg_name] # Get value, might be None
+        value = valid_args_with_none[arg_name]
         arg_name_lower = arg_name.lower()
-
         skip_argument = False
 
-        # --- Default Skipping Logic (Same as before) ---
-        if is_fill_form_kw and arg_name in FILL_FORM_DEFAULTS:
-             if arg_name not in ['locator_field', 'value']:
-                default_value = FILL_FORM_DEFAULTS.get(arg_name)
-                current_value_original = value
-                if arg_name == 'locator_switch_checked' and default_value == '${EMPTY}':
-                    if current_value_original in ['${EMPTY}', False, 'False', None, '']: skip_argument = True
-                elif isinstance(default_value, bool) and isinstance(current_value_original, bool):
-                    if current_value_original == default_value: skip_argument = True
-                elif isinstance(default_value, str) and isinstance(current_value_original, str):
-                    if current_value_original == default_value: skip_argument = True
-                elif isinstance(default_value, bool) and isinstance(current_value_original, str):
-                    default_as_robot_bool = '${True}' if default_value else '${False}'
-                    if _format_value_for_robot(current_value_original) == default_as_robot_bool: skip_argument = True
-
-        elif is_verify_form_kw and arg_name in VERIFY_FORM_DEFAULTS:
-             if arg_name not in ['locator_field', 'exp_value', 'assertion']:
-                default_value = VERIFY_FORM_DEFAULTS.get(arg_name)
-                current_value_original = value
-                if arg_name == 'locator_switch_checked' and default_value == '${EMPTY}':
-                     if current_value_original in ['${EMPTY}', False, 'False', None, '']: skip_argument = True
-                elif arg_name == 'select_attribute' and default_value == 'label':
-                     if current_value_original == 'label': skip_argument = True
-                elif isinstance(default_value, bool) and isinstance(current_value_original, bool):
-                     if current_value_original == default_value: skip_argument = True
-                elif isinstance(default_value, bool) and isinstance(current_value_original, str):
-                     default_as_robot_bool = '${True}' if default_value else '${False}'
-                     if _format_value_for_robot(current_value_original) == default_as_robot_bool: skip_argument = True
-                elif isinstance(default_value, str) and isinstance(current_value_original, str):
-                     if current_value_original == default_value: skip_argument = True
+        # --- NEW Default Skipping Logic (V19 - Fixed for Fill/Verify) ---
+        
+        # NEVER skip core arguments for Fill/Verify form (even if None/empty)
+        if (is_fill_form or is_verify_form) and arg_name_lower in ['locator_field', 'value', 'exp_value', 'assertion']:
+            skip_argument = False  # Force include these arguments
+        
+        # 1. Skip None or empty strings for menu locators
+        elif arg_name_lower in ['menu_locator', 'main_menu', 'submenu'] and value in [None, '']:
+            skip_argument = True
+        
+        # 2. Skip 'sel_attr' if it is 'label' (the default) or None
+        elif arg_name_lower == 'sel_attr':
+            if value is None or str(value).lower() == 'label':
+                skip_argument = True
+        
+        # 3. Skip boolean flags if they are False
+        elif arg_name_lower in [
+            'is_checkboxtype', 'is_antdesign', 'is_switchtype', # Fill Form
+            'ignorcase', 'antdesign', 'is_skipfield', # Verify Form
+            'is_check' # Verify Detail (REMOVED, but keeping logic)
+        ]:
+            if value is False or str(value).lower() == 'false':
+                skip_argument = True
+        
+        # 4. Skip 'locator_switch_checked' if it's ${EMPTY}, None, or empty string
+        elif arg_name_lower == 'locator_switch_checked':
+            if value in ['${EMPTY}', None, '']:
+                skip_argument = True
 
         if skip_argument:
             continue
-        # --- End Default Skipping ---
+        # --- End NEW Default Skipping ---
 
-        # --- Format Value for Robot ---
+        # --- (Value formatting remains the same) ---
         if value is None: value_to_format = '${EMPTY}'
-        elif value == '' and arg_name_lower in ['menu_locator', 'main_menu', 'submenu']: continue
         elif value == '': value_to_format = '${EMPTY}'
         else: value_to_format = value
-
-        # Use helper to get base formatted string (handles vars, ${EMPTY}, 'True'/'False' strings)
         formatted_value_str = _format_value_for_robot(value_to_format)
-
-        # --- Append parts [REVISED LOGIC V3 - Clearer Boolean Handling] ---
+        # --- End Value formatting ---
+        
+        # --- Append parts [REVISED LOGIC V7 - Always Named] ---
         if formatted_value_str is not None:
-             final_output_value = formatted_value_str # Start with helper result
-             original_value = valid_args_with_none[arg_name] # Get original for type check
+             final_output_value = formatted_value_str
+             original_value = valid_args_with_none[arg_name]
 
-             # 1. Convert actual Python Booleans to ${True}/${False}
              if isinstance(original_value, bool):
-                  final_output_value = '${True}' if original_value else '${False}'
-             # 2. Convert string 'True'/'False' (from helper) to ${True}/${False}
-             elif formatted_value_str == 'True': final_output_value = '${True}'
-             elif formatted_value_str == 'False': final_output_value = '${False}'
-             # Now final_output_value holds the correct Robot representation
+                  final_output_value = 'true' if original_value else 'false'
+             elif formatted_value_str == 'True': final_output_value = 'true'
+             elif formatted_value_str == 'False': final_output_value = 'false'
 
-             # 3. Determine if argument name should be omitted (ONLY for specific boolean flags)
-             # This list defines which arguments can omit their name if value is True/False
-             boolean_flags_can_omit_name = [
-                 'is_switch_type', 'is_checkbox_type', 'is_ant_design',
-                 'ignorcase', 'is_skipfield'
-             ]
-             omit_arg_name = (arg_name_lower in boolean_flags_can_omit_name and
-                              final_output_value in ['${True}', '${False}'])
-
-             # 4. Append to parts list
-             if omit_arg_name:
-                   parts.append(f"{final_output_value}") # Append only value
-             else:
-                   # Append name=value for all other cases (including locator, exp_value, value, assertion, etc.)
-                   parts.append(f"{arg_name}={final_output_value}")
-             # --- End Revised Append Logic V3 ---
-
-    # --- Line breaking logic (เหมือนเดิม) ---
+             # 3. Always use named args (key=value)
+             parts.append(f"{arg_name}={final_output_value}")
+             # --- End Revised Append Logic V7 ---
+    
+    # --- (Line breaking logic remains the same) ---
     if len(parts) <= 1:
         return parts[0] if parts else ""
 
@@ -505,13 +479,16 @@ def format_robot_step_line(step):
             lines[-1] += part_with_padding
             current_line_len += part_len
     return "\n".join(lines)
+# --- END: MODIFIED ---
 
+
+# --- START: MODIFIED (Lowercase bools) ---
 # --- [HELPER] Function for formatting values ---
 def _format_value_for_robot(value):
     """
-    Applies the V10 smart formatting logic to a single value.
+    Applies the V11 smart formatting logic to a single value.
     Handles None by returning None. Handles empty string by returning '${EMPTY}'.
-    Converts boolean True/False to string 'True'/'False'.
+    Converts boolean True/False to string 'true'/'false'.
     """
     if value is None:
         return None # Caller function handles None -> '${EMPTY}' conversion
@@ -533,8 +510,8 @@ def _format_value_for_robot(value):
 
         # Pattern 3: The literal string '${EMPTY}' or boolean strings 'true'/'false'
         elif v_str == '${EMPTY}' or v_str.lower() in ['true', 'false']:
-            # Return the original case for '${EMPTY}', capitalize for boolean strings
-            formatted_value = v_str.capitalize() if v_str.lower() in ['true', 'false'] else v_str
+            # Return the original case for '${EMPTY}', lowercase for boolean strings
+            formatted_value = v_str.lower() if v_str.lower() in ['true', 'false'] else v_str
 
         # Pattern 4: UPPERCASE_WITH_UNDERSCORE (likely a constant variable)
         elif re.match(r'^[A-Z][A-Z0-9_]*$', v_str): formatted_value = f"${{{v_str}}}"
@@ -545,26 +522,23 @@ def _format_value_for_robot(value):
         # Pattern 6: Regular text values
         else: formatted_value = v_str
 
-    # Handle Python boolean type -> convert to string 'True' or 'False'
+    # Handle Python boolean type -> convert to string 'true' or 'false'
     elif isinstance(value, bool):
-        formatted_value = 'True' if value else 'False'
+        formatted_value = 'true' if value else 'false'
 
     # Handle other types (numbers, etc.) -> convert to string
     else:
         formatted_value = str(value)
 
     return formatted_value
+# --- END: MODIFIED ---
 
 
 def format_args_as_string(args_dict):
     """
     Helper to format arguments as a simple string for st.caption
     
-    🔧 FIXED V10: Smart Variable Detection
-    ✅ Menu dictionary: ${mainmenu}[configuration]
-    ✅ UPPERCASE variables: HOST_IMAP_TEMPEMAIL → ${HOST_IMAP_TEMPEMAIL}
-    ✅ LOCATOR_ prefix: LOCATOR_USERNAME → ${LOCATOR_USERNAME}
-    ✅ Text values: label → label (ไม่ใส่ ${})
+    🔧 FIXED V11: Smart Variable Detection + Lowercase bools
     """
     if not args_dict:
         return ""
@@ -595,7 +569,7 @@ def format_args_as_string(args_dict):
             
             # Pattern 3: ${EMPTY} or boolean
             elif v_str == '${EMPTY}' or v_str.lower() in ['true', 'false']:
-                val_str = v_str.capitalize() if v_str.lower() in ['true', 'false'] else v_str
+                val_str = v_str.lower() if v_str.lower() in ['true', 'false'] else v_str
             
             # Pattern 4: UPPERCASE_WITH_UNDERSCORE (likely a variable) ✅ NEW!
             elif re.match(r'^[A-Z][A-Z0-9_]*$', v_str):
@@ -615,7 +589,7 @@ def format_args_as_string(args_dict):
         
         # Handle boolean
         elif isinstance(v, bool):
-            val_str = 'True' if v else 'False'
+            val_str = 'true' if v else 'false'
         
         elif v or v is False:
             val_str = str(v)
@@ -731,7 +705,7 @@ def generate_arg_name_from_locator(locator_name):
     clean_name = clean_name.lower().replace('_', ' ')
 
     # 3. Handle common abbreviations or specific words (optional refinement)
-    #    e.g., 'pwd' -> 'password', 'usr' -> 'user'
+    #    e.g., 'pwd' -> 'password', 'usr' -> 'user', 'num' -> 'number'
     replacements = {'pwd': 'password', 'usr': 'user', 'num': 'number'}
     words = clean_name.split()
     cleaned_words = [replacements.get(word, word) for word in words]
@@ -973,9 +947,13 @@ def keyword_exists_in_content(file_content, keyword_name):
 # ===== End New Section =====
 # ===================================================================
 
+# --- START: MODIFIED (V18 - Always Named, Skip Defaults) ---
 def format_args_as_multiline_string(args_dict):
     """
     ✅ CUSTOM: locator แยกแถว, args อื่นคั่นด้วย |
+    🔧 FIXED V18: Formats booleans as lowercase 'true'/'false' and
+                  skips arguments that match their default 
+                  (e.g., boolean False, sel_attr='label').
     """
     if not args_dict:
         return ""
@@ -983,49 +961,74 @@ def format_args_as_multiline_string(args_dict):
     locator_args = []
     other_args = []
     
-    # Define argument order
+    # --- (Arg order sorting remains the same) ---
     arg_order = sorted(args_dict.keys(), key=lambda x: (
-        0 if 'locator' in x.lower() else
-        1 if x == 'main_menu' else
-        2 if x == 'submenu' else
-        3 if x in ['exp_value', 'value'] else
-        4
+        0 if x.lower() == 'locator_field' else    # Priority 0
+        1 if x.lower() == 'exp_value' else      # Priority 1
+        2 if x.lower() == 'assertion' else      # Priority 2
+        3 if x.lower() == 'value' else         # Priority 3 (for Fill Form)
+        4 if 'locator' in x.lower() else   # Fallback for other locators
+        5 if x == 'main_menu' else
+        6 if x == 'submenu' else
+        7 # Other args
     ))
+    # ---
 
     # Parse arguments
     for k in arg_order:
         v_original = args_dict[k]
         value_to_format = v_original
         
+        arg_name_lower = k.lower()
+        skip_argument = False
+
+        # --- NEW Default Skipping Logic (V18) ---
+        
+        # 1. Skip None or empty strings for menu locators
+        if arg_name_lower in ['menu_locator', 'main_menu', 'submenu'] and v_original in [None, '']:
+            skip_argument = True
+        
+        # 2. Skip 'select_attribute' if it is 'label' (the default) or None
+        elif arg_name_lower == 'select_attribute':
+            if v_original is None or str(v_original).lower() == 'label':
+                skip_argument = True
+        
+        # 3. Skip boolean flags if they are False
+        elif arg_name_lower in [
+            'is_checkboxtype', 'is_ant_design', 'is_switchtype', # Fill Form
+            'ignorcase', 'antdesign', 'is_skipfield', # Verify Form
+            'is_check' # Verify Detail (REMOVED, but keeping logic)
+        ]:
+            if v_original is False or str(v_original).lower() == 'false':
+                skip_argument = True
+        
+        # 4. Skip 'locator_switch_checked' if it's ${EMPTY}, None, or empty string
+        elif arg_name_lower == 'locator_switch_checked':
+            if v_original in ['${EMPTY}', None, '']:
+                skip_argument = True
+
+        if skip_argument:
+            continue
+        # --- End NEW Default Skipping ---
+
+
         if v_original is None or v_original == '':
             value_to_format = '${EMPTY}'
-            if k.lower() in ['menu_locator', 'main_menu', 'submenu'] and v_original == '':
-                continue
 
         formatted_value_str = _format_value_for_robot(value_to_format)
         final_output_value = formatted_value_str
         
         if isinstance(v_original, bool):
-            final_output_value = '${True}' if v_original else '${False}'
+            final_output_value = 'true' if v_original else 'false'
         elif formatted_value_str == 'True': 
-            final_output_value = '${True}'
+            final_output_value = 'true'
         elif formatted_value_str == 'False': 
-            final_output_value = '${False}'
+            final_output_value = 'false'
 
         if final_output_value is not None:
-            boolean_flags_can_omit_name = [
-                'is_switch_type', 'is_checkbox_type', 'is_ant_design',
-                'ignorcase', 'is_skipfield'
-            ]
-            omit_arg_name = (k.lower() in boolean_flags_can_omit_name and
-                           final_output_value in ['${True}', '${False}'])
-
+            # (Don't need omit_arg_name logic for this UI view, always named)
+            arg_str = f"{k}={final_output_value}"
             is_locator = (k.lower() == 'locator_field')
-            
-            if omit_arg_name:
-                arg_str = final_output_value
-            else:
-                arg_str = f"{k}={final_output_value}"
             
             if is_locator:
                 locator_args.append(arg_str)
@@ -1051,3 +1054,4 @@ def format_args_as_multiline_string(args_dict):
     html += '</div>'
     
     return html
+# --- END: MODIFIED ---

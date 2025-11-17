@@ -14,6 +14,7 @@ import json
 import textwrap
 import re
 from streamlit_option_menu import option_menu
+from bs4 import BeautifulSoup
 
 # Backend imports
 from modules.session_manager import init_session_state 
@@ -56,6 +57,14 @@ from modules.ui_keyword_factory import (
     render_kw_factory_fill_form_dialog, 
     render_kw_factory_verify_detail_dialog, 
     render_kw_factory_api_csv_step_dialog
+)
+
+from modules.checkbox_keywords_generator import (
+    generate_checkbox_template_and_keyword,
+    filter_checkbox_locators,
+    separate_locators,
+    detect_page_name_from_html,
+    analyze_checkbox_structure
 )
 
 # HTML Parser
@@ -2217,7 +2226,7 @@ def render_studio_tab():
         "Assets", 
         "Test Data",
         "Keyword Factory", 
-        "Test Flow",
+        # "Test Flow",
         "CRUD Generator"
     ]
     
@@ -2225,7 +2234,7 @@ def render_studio_tab():
         "safe2-fill",
         "server",
         "gear-wide-connected",
-        "kanban",
+        # "kanban",
         "rocket-takeoff"
     ]   
 
@@ -2308,8 +2317,8 @@ def render_studio_tab():
     elif selected_tab_name == "Keyword Factory":
         render_keyword_factory_tab()
 
-    elif selected_tab_name == "Test Flow":
-        render_test_flow_tab()
+    # elif selected_tab_name == "Test Flow":
+    #     render_test_flow_tab()
 
     elif selected_tab_name == "CRUD Generator":
         render_crud_generator_tab()
@@ -2338,10 +2347,14 @@ def html_editor_dialog():
     # เรียกใช้ฟังก์ชัน dialog ที่เพิ่งสร้าง
     edit_html()
 
+# ใน app.py
+
 def render_resources_view_new():
     """ 
     Renders the Resources view in a two-column layout.
     [MODIFIED V3] Added auto-load locators from pageobjects folder
+    [MODIFIED V4] Integrated checkbox button into page expander
+    [MODIFIED V8] Re-wired the button action to open the dialog
     """
     ws_state = st.session_state.studio_workspace
     
@@ -2727,10 +2740,193 @@ def render_resources_view_new():
                     with st.spinner("Finding locators..."):
                         parser = HTMLLocatorParser()
                         new_locators_found = 0
+                        new_checkbox_locators = 0
+
+                        ws_state['checkbox_locators'] = []
+                        
+                        html_page_names = [p['name'] for p in ws_state.get('html_pages', [])]
+                        ws_state['locators'] = [
+                            loc for loc in ws_state.get('locators', [])
+                            if loc.get('page_name') not in html_page_names
+                        ]
+
                         for page in ws_state['html_pages']:
                             if page['html']:
-                                fields = parser.parse_html(page['html'])
-                                for field in fields:
+                                # ✅ 1. ใช้ analyze_checkbox_structure เพื่อหา checkbox pattern
+                                checkbox_analysis = analyze_checkbox_structure(page['html'])
+                                
+                                # ✅ 2. หา checkbox labels ที่ detect ได้
+                                soup = BeautifulSoup(page['html'], 'html.parser')
+                                
+                                # สำหรับ Ant Design
+                                if checkbox_analysis.get('framework') == 'ant_design':
+                                    ant_checkboxes = soup.find_all('div', class_=lambda x: x and 'ant-checkbox-wrapper' in x)
+                                    
+                                    for ant_cb in ant_checkboxes:
+                                        # หา label text
+                                        label_spans = ant_cb.find_all('span', recursive=True)
+                                        label_text = None
+                                        
+                                        for span in label_spans:
+                                            span_classes = span.get('class', [])
+                                            if isinstance(span_classes, str):
+                                                span_classes = span_classes.split()
+                                            
+                                            # ข้าม span ที่เป็น checkbox inner
+                                            if any('ant-checkbox' in cls for cls in span_classes):
+                                                continue
+                                            
+                                            text = span.get_text(strip=True)
+                                            if text:
+                                                label_text = text
+                                                break
+                                        
+                                        if label_text:
+                                            # สร้างชื่อตัวแปร
+                                            var_name = label_text.replace(' ', '_').replace('-', '_').upper() + '_CHECKBOX'
+                                            
+                                            # ใช้ pattern ที่ analyze_checkbox_structure หาเจอ
+                                            xpath = checkbox_analysis['pattern'].replace('::labelcheckbox::', label_text)
+                                            
+                                            checkbox_loc = {
+                                                'id': str(uuid.uuid4()),
+                                                'name': f"LOCATOR_{var_name}",
+                                                'value': xpath,
+                                                'page_name': page['name'],
+                                                'label': label_text
+                                            }
+                                            
+                                            if not any(loc['name'] == checkbox_loc['name'] for loc in ws_state.get('checkbox_locators', [])):
+                                                ws_state.setdefault('checkbox_locators', []).append(checkbox_loc)
+                                                new_checkbox_locators += 1
+                                
+                                # ✅ สำหรับ Bootstrap - แก้ไขให้ถูกต้อง
+                                elif checkbox_analysis.get('framework') == 'bootstrap':
+                                    # หา checkbox ทั้งหมดที่มี class form-check-input
+                                    bootstrap_checkboxes = soup.find_all('input', type='checkbox')
+                                    
+                                    for checkbox in bootstrap_checkboxes:
+                                        # เช็คว่ามี class form-check-input หรือไม่
+                                        cb_classes = checkbox.get('class', [])
+                                        if isinstance(cb_classes, str):
+                                            cb_classes = cb_classes.split()
+                                        
+                                        if 'form-check-input' not in cb_classes:
+                                            # ถ้าไม่มี class ลองเช็คว่าอยู่ใน div.form-check หรือไม่
+                                            parent = checkbox.find_parent('div', class_='form-check')
+                                            if not parent:
+                                                continue  # ข้าม checkbox นี้
+                                        
+                                        # หา label
+                                        label = None
+                                        label_text = None
+                                        
+                                        # วิธีที่ 1: หา label ที่ใช้ for attribute
+                                        checkbox_id = checkbox.get('id')
+                                        if checkbox_id:
+                                            label = soup.find('label', attrs={'for': checkbox_id})
+                                        
+                                        # วิธีที่ 2: หา label ที่เป็น next sibling
+                                        if not label:
+                                            next_elem = checkbox.next_sibling
+                                            while next_elem:
+                                                if hasattr(next_elem, 'name') and next_elem.name == 'label':
+                                                    label = next_elem
+                                                    break
+                                                next_elem = next_elem.next_sibling
+                                                # หยุดถ้าเจอ tag อื่น
+                                                if next_elem and hasattr(next_elem, 'name') and next_elem.name != 'label':
+                                                    break
+                                        
+                                        # วิธีที่ 3: หา label ที่เป็น previous sibling
+                                        if not label:
+                                            prev_elem = checkbox.previous_sibling
+                                            while prev_elem:
+                                                if hasattr(prev_elem, 'name') and prev_elem.name == 'label':
+                                                    label = prev_elem
+                                                    break
+                                                prev_elem = prev_elem.previous_sibling
+                                                if prev_elem and hasattr(prev_elem, 'name') and prev_elem.name != 'label':
+                                                    break
+                                        
+                                        if label:
+                                            label_text = label.get_text(strip=True)
+                                        
+                                        if label_text:
+                                            var_name = label_text.replace(' ', '_').replace('-', '_').upper() + '_CHECKBOX'
+                                            xpath = checkbox_analysis['pattern'].replace('::labelcheckbox::', label_text)
+                                            
+                                            checkbox_loc = {
+                                                'id': str(uuid.uuid4()),
+                                                'name': f"LOCATOR_{var_name}",
+                                                'value': xpath,
+                                                'page_name': page['name'],
+                                                'label': label_text
+                                            }
+                                            
+                                            if not any(loc['name'] == checkbox_loc['name'] for loc in ws_state.get('checkbox_locators', [])):
+                                                ws_state.setdefault('checkbox_locators', []).append(checkbox_loc)
+                                                new_checkbox_locators += 1
+                                
+                                # สำหรับ Standard HTML
+                                else:
+                                    standard_checkboxes = soup.find_all('input', type='checkbox')
+                                    
+                                    for checkbox in standard_checkboxes:
+                                        # ข้าม Ant Design checkbox
+                                        if checkbox.find_parent('div', class_=lambda x: x and 'ant-checkbox-wrapper' in x):
+                                            continue
+                                        
+                                        # ข้าม Bootstrap checkbox
+                                        cb_classes = checkbox.get('class', [])
+                                        if isinstance(cb_classes, str):
+                                            cb_classes = cb_classes.split()
+                                        if 'form-check-input' in cb_classes:
+                                            continue
+                                        
+                                        # หา label
+                                        cb_id = checkbox.get('id')
+                                        label = None
+                                        
+                                        if cb_id:
+                                            label = soup.find('label', attrs={'for': cb_id})
+                                        
+                                        if not label:
+                                            label = checkbox.find_next_sibling('label')
+                                        
+                                        if not label:
+                                            label = checkbox.find_parent('label')
+                                        
+                                        if label:
+                                            label_text = label.get_text(strip=True)
+                                            var_name = label_text.replace(' ', '_').replace('-', '_').upper() + '_CHECKBOX'
+                                            xpath = checkbox_analysis['pattern'].replace('::labelcheckbox::', label_text)
+                                            
+                                            checkbox_loc = {
+                                                'id': str(uuid.uuid4()),
+                                                'name': f"LOCATOR_{var_name}",
+                                                'value': xpath,
+                                                'page_name': page['name'],
+                                                'label': label_text
+                                            }
+                                            
+                                            if not any(loc['name'] == checkbox_loc['name'] for loc in ws_state.get('checkbox_locators', [])):
+                                                ws_state.setdefault('checkbox_locators', []).append(checkbox_loc)
+                                                new_checkbox_locators += 1
+                                
+                                # เก็บ HTML snapshot และ pattern info
+                                if new_checkbox_locators > 0:
+                                    page['html_content_snapshot'] = page['html']
+                                    page['checkbox_pattern'] = checkbox_analysis
+                                
+                                # ✅ 3. หา normal locators (ไม่รวม checkbox)
+                                all_fields = parser.parse_html(page['html'])
+                                
+                                for field in all_fields:
+                                    # ข้าม checkbox ที่เจอแล้ว
+                                    if '_CHECKBOX' in field.variable.upper():
+                                        continue
+                                    
                                     new_loc_name = f"LOCATOR_{field.variable}"
                                     if not any(loc['name'] == new_loc_name for loc in ws_state['locators']):
                                         ws_state['locators'].append({
@@ -2740,7 +2936,8 @@ def render_resources_view_new():
                                             'page_name': page['name']
                                         })
                                         new_locators_found += 1
-                        st.success(f"Found {new_locators_found} new locators.")
+                        
+                        st.success(f"Found {new_locators_found} new locators and {new_checkbox_locators} new checkboxes.")
                         st.rerun()
 
     # --- HTML Editor Dialog ---
@@ -2749,8 +2946,8 @@ def render_resources_view_new():
             html_editor_dialog()
 
     # --- 3. LOCATOR STAGING AREA (Collapsible) ---
-    if ws_state.get('locators'):
-        for idx, loc in enumerate(ws_state['locators']):
+    if ws_state.get('locators') or ws_state.get('checkbox_locators'): # <-- ปรับเงื่อนไข
+        for idx, loc in enumerate(ws_state.get('locators', [])):
             if 'id' not in loc or not loc['id']:
                 ws_state['locators'][idx]['id'] = str(uuid.uuid4())
         
@@ -2758,7 +2955,7 @@ def render_resources_view_new():
             
             html_page_names = [p['name'] for p in ws_state.get('html_pages', [])]
             all_file_locators = [
-                loc for loc in ws_state['locators'] 
+                loc for loc in ws_state.get('locators', []) 
                 if loc.get('page_name') not in html_page_names
             ]
             
@@ -2875,6 +3072,7 @@ def render_resources_view_new():
             # ส่วน HTML Locators (✏️ From HTML (Editable))
             st.markdown("<h6>✏️ From HTML (Editable)</h6>", unsafe_allow_html=True)
             
+            # ✅ ดึง Checkbox locators มาจัดกลุ่มตาม Page
             html_locators_by_page = {}
             for i, loc in enumerate(ws_state['locators']):
                 if loc.get('page_name') in html_page_names:
@@ -2882,26 +3080,205 @@ def render_resources_view_new():
                     if page_name not in html_locators_by_page:
                         html_locators_by_page[page_name] = []
                     html_locators_by_page[page_name].append((i, loc))
+            
+            checkbox_locators_by_page = {}
+            for loc in ws_state.get('checkbox_locators', []):
+                if loc.get('page_name') in html_page_names:
+                    page_name = loc['page_name']
+                    if page_name not in checkbox_locators_by_page:
+                        checkbox_locators_by_page[page_name] = []
+                    checkbox_locators_by_page[page_name].append(loc)
 
-            if not html_locators_by_page:
+            if not html_locators_by_page and not checkbox_locators_by_page:
                 with st.container(border=True):
                     st.caption("No locators added from HTML yet.")
             else:
                 st.markdown("""
                     <style>
                     .locator-header {
-                        display: grid; grid-template-columns: 40% 50% 10%;
-                        font-weight: 600; padding: 8px 4px;
+                        display: grid; grid-template-columns: 50% 42% 8%;
+                        font-weight: 900; padding: 8px 4px;
                         background-color: rgba(128, 128, 128, 0.15);
                         border-radius: 4px; margin-bottom: 8px; font-size: 0.9rem;
+                        background-color: rgba(88, 166, 255, 0.15);
+                        border: 1px solid rgba(88, 166, 255, 0.3);
+                        color: #a3c9ff;
+                        text-align: center;
                     }
                     .locator-header div { padding: 0 4px; }
+                    input[key*="loc_name_"],
+                    input[key*="loc_value_"] {
+                        font-size: 0.7rem !important; /* 👈 ปรับขนาดฟอนต์ตรงนี้ */
+                        font-family: monospace !important;
+                    }
                     </style>
                 """, unsafe_allow_html=True)
                 
-                for page_name, locators_in_page in html_locators_by_page.items():
-                    with st.expander(f"📄 **{page_name}** ({len(locators_in_page)} items)", expanded=True):
+                # ✅ แก้ไข: วนลูปตาม html_page_names เพื่อให้แสดงผลทุกหน้า
+                for page_name in html_page_names:
+                    locators_in_page = html_locators_by_page.get(page_name, [])
+                    checkboxes_in_page = checkbox_locators_by_page.get(page_name, [])
+                    
+                    if not locators_in_page and not checkboxes_in_page:
+                        continue # ข้ามถ้าหน้านี้ไม่มีอะไรเลย
+
+                    # ✅ สร้าง Title แบบไดนามิก
+                    expander_title = f"📄 **{page_name}** ({len(locators_in_page)} locators"
+                    if checkboxes_in_page:
+                        expander_title += f", {len(checkboxes_in_page)} checkboxes"
+                    expander_title += ")"
+                    
+                    with st.expander(expander_title, expanded=True):
                         
+                        # ✅ Logic ใหม่: แสดงปุ่มตามสถานะ
+                        
+                        # หา page data
+                        page_data = None
+                        for p in ws_state.get('html_pages', []):
+                            if p['name'] == page_name:
+                                page_data = p
+                                break
+                        
+                        # กรณีที่ 1: เจอ checkbox จาก auto-detect → แสดงปุ่ม "Found X Checkbox(es)"
+                        if checkboxes_in_page and len(checkboxes_in_page) > 0:
+                            if st.button(
+                                f"✅ Found {len(checkboxes_in_page)} Checkbox(es) - Click to Suggest Handling", 
+                                key=f"gen_cb_btn_{page_name.replace(' ','_')}", 
+                                type="primary",
+                                use_container_width=True
+                            ):
+                                if page_data:
+                                    page_html = page_data.get('html_content_snapshot', page_data.get('html', ''))
+                                    
+                                    if page_html:
+                                        try:
+                                            # Analyze checkbox structure
+                                            checkbox_analysis = analyze_checkbox_structure(page_html)
+                                            
+                                            # หา labels
+                                            soup = BeautifulSoup(page_html, 'html.parser')
+                                            found_labels = []
+                                            
+                                            if checkbox_analysis.get('framework') == 'ant_design':
+                                                ant_checkboxes = soup.find_all('div', class_=lambda x: x and 'ant-checkbox-wrapper' in x)
+                                                for ant_cb in ant_checkboxes:
+                                                    label_spans = ant_cb.find_all('span', recursive=True)
+                                                    for span in label_spans:
+                                                        span_classes = span.get('class', [])
+                                                        if isinstance(span_classes, str):
+                                                            span_classes = span_classes.split()
+                                                        if any('ant-checkbox' in cls for cls in span_classes):
+                                                            continue
+                                                        text = span.get_text(strip=True)
+                                                        if text:
+                                                            found_labels.append(text)
+                                                            break
+                                            
+                                            # บันทึกข้อมูล
+                                            st.session_state['html_content'] = page_html
+                                            st.session_state['checkbox_page_name'] = page_name
+                                            st.session_state['checkbox_pattern'] = checkbox_analysis.get('pattern', '')
+                                            st.session_state['checkbox_framework'] = checkbox_analysis.get('framework', 'standard')
+                                            st.session_state['checkbox_description'] = checkbox_analysis.get('description', '')
+                                            st.session_state['checkbox_found_labels'] = found_labels
+                                            
+                                            # เปิด Dialog
+                                            st.session_state['show_checkbox_generator'] = True
+                                            st.rerun()
+                                            
+                                        except Exception as e:
+                                            st.error(f"Error analyzing checkbox: {e}")
+                                    else:
+                                        st.error("HTML content not found")
+                            
+                            st.markdown("---")
+                        
+                        # กรณีที่ 2: ไม่เจอ checkbox จาก auto-detect → แสดงปุ่ม manual
+                        elif page_data and page_data.get('html'):
+                            st.info("ℹ️ No checkboxes detected automatically. You can manually analyze the HTML structure.")
+                            
+                            if st.button(
+                                f"🔲 Manually Analyze Checkbox Structure", 
+                                key=f"manual_analyze_cb_{page_name.replace(' ','_')}", 
+                                type="secondary",
+                                use_container_width=True
+                            ):
+                                page_html = page_data.get('html', '')
+                                
+                                if page_html:
+                                    try:
+                                        # Analyze checkbox structure
+                                        checkbox_analysis = analyze_checkbox_structure(page_html)
+                                        
+                                        # หา labels (ถึงแม้จะไม่เจอก็พยายามหา)
+                                        soup = BeautifulSoup(page_html, 'html.parser')
+                                        found_labels = []
+                                        
+                                        # ลอง detect หลายแบบ
+                                        frameworks_to_try = ['ant_design', 'bootstrap', 'standard']
+                                        
+                                        for fw in frameworks_to_try:
+                                            if fw == 'ant_design':
+                                                checkboxes = soup.find_all('div', class_=lambda x: x and 'ant-checkbox-wrapper' in x)
+                                                for cb in checkboxes:
+                                                    label_spans = cb.find_all('span', recursive=True)
+                                                    for span in label_spans:
+                                                        span_classes = span.get('class', [])
+                                                        if isinstance(span_classes, str):
+                                                            span_classes = span_classes.split()
+                                                        if any('ant-checkbox' in cls for cls in span_classes):
+                                                            continue
+                                                        text = span.get_text(strip=True)
+                                                        if text:
+                                                            found_labels.append(text)
+                                                            break
+                                            
+                                            elif fw == 'bootstrap':
+                                                checkboxes = soup.find_all('input', class_=lambda x: x and 'form-check-input' in x, type='checkbox')
+                                                for cb in checkboxes:
+                                                    label = cb.find_next_sibling('label', class_='form-check-label')
+                                                    if label:
+                                                        found_labels.append(label.get_text(strip=True))
+                                            
+                                            elif fw == 'standard':
+                                                checkboxes = soup.find_all('input', type='checkbox')
+                                                for cb in checkboxes:
+                                                    cb_id = cb.get('id')
+                                                    label = None
+                                                    
+                                                    if cb_id:
+                                                        label = soup.find('label', attrs={'for': cb_id})
+                                                    
+                                                    if not label:
+                                                        label = cb.find_next_sibling('label')
+                                                    
+                                                    if not label:
+                                                        label = cb.find_parent('label')
+                                                    
+                                                    if label:
+                                                        found_labels.append(label.get_text(strip=True))
+                                            
+                                            if found_labels:
+                                                break
+                                        
+                                        # บันทึกข้อมูล
+                                        st.session_state['html_content'] = page_html
+                                        st.session_state['checkbox_page_name'] = page_name
+                                        st.session_state['checkbox_pattern'] = checkbox_analysis.get('pattern', '')
+                                        st.session_state['checkbox_framework'] = checkbox_analysis.get('framework', 'standard')
+                                        st.session_state['checkbox_description'] = checkbox_analysis.get('description', '')
+                                        st.session_state['checkbox_found_labels'] = found_labels
+                                        
+                                        # เปิด Dialog
+                                        st.session_state['show_checkbox_generator'] = True
+                                        st.rerun()
+                                        
+                                    except Exception as e:
+                                        st.error(f"Error analyzing checkbox: {e}")
+                            
+                            st.markdown("---")
+
+                        # ส่วนแสดงผล Locator แบบ 2 คอลัมน์
                         mid_point = (len(locators_in_page) + 1) // 2
                         left_locators = locators_in_page[:mid_point]
                         right_locators = locators_in_page[mid_point:]
@@ -2917,7 +3294,7 @@ def render_resources_view_new():
                                         locator_data['id'] = loc_id
                                         ws_state['locators'][original_index]['id'] = loc_id   
                                                                          
-                                    col_name, col_value, col_action = st.columns([40, 50, 10])
+                                    col_name, col_value, col_action = st.columns([50,42 ,10])
                                     with col_name: new_name = st.text_input("Name", value=locator_data['name'], key=f"loc_name_L_{page_name}_{loc_id}", label_visibility="collapsed", placeholder="Name")
                                     with col_value: new_value = st.text_input("Value", value=locator_data['value'], key=f"loc_value_L_{page_name}_{loc_id}", label_visibility="collapsed", placeholder="XPath")
                                     with col_action:
@@ -2943,7 +3320,7 @@ def render_resources_view_new():
                                             locator_data['id'] = loc_id
                                             ws_state['locators'][original_index]['id'] = loc_id
                                         
-                                        col_name, col_value, col_action = st.columns([40, 50, 10])
+                                        col_name, col_value, col_action = st.columns([50, 42, 10])
                                         with col_name: new_name = st.text_input("Name", value=locator_data['name'], key=f"loc_name_R_{page_name}_{loc_id}", label_visibility="collapsed", placeholder="Name")
                                         with col_value: new_value = st.text_input("Value", value=locator_data['value'], key=f"loc_value_R_{page_name}_{loc_id}", label_visibility="collapsed", placeholder="XPath")
                                         with col_action:
@@ -2959,6 +3336,7 @@ def render_resources_view_new():
                                 else:
                                     st.caption("(Empty)")
 
+            show_checkbox_generator_ui()
             # ส่วน Export Options
             st.markdown("---")
             st.subheader("💾 Export Options")
@@ -3012,17 +3390,39 @@ def render_resources_view_new():
                         key="locator_append_target"
                     )
                     
+                    # ✅ เพิ่ม: แสดงสถานะ Checkbox Template
+                    show_checkbox_template_status()
+
                     if st.button("➕ Append Locators", key="append_locators_btn"):
-                        if not html_locators or not locators_string:
-                            st.warning("No new locators from HTML to save.")
+                        has_locators = bool(html_locators and locators_string)
+                        has_checkbox_template = st.session_state.get('checkbox_template', {}).get('enabled', False)
+
+                        if not has_locators and not has_checkbox_template:
+                            st.warning("No new locators or checkbox template to save.")
                         else:
                             full_path = os.path.join(st.session_state.project_path, selected_file)
-                            success, message = append_robot_content_intelligently(
-                                full_path, 
-                                variables_code=locators_string
-                            )
-                            if success: st.success(message)
-                            else: st.error(message)
+                            
+                            # 1. Append normal locators (ถ้ามี)
+                            success_loc = True
+                            msg_loc = "No new locators"
+                            if has_locators:
+                                success_loc, msg_loc = append_robot_content_intelligently(
+                                    full_path, 
+                                    variables_code=locators_string
+                                )
+                            
+                            # 2. Append checkbox template (ถ้ามี)
+                            success_cb = True
+                            msg_cb = "No checkbox template"
+                            if has_checkbox_template:
+                                success_cb, msg_cb = append_checkbox_template_to_file(full_path)
+                            
+                            if success_loc and success_cb:
+                                st.success(f"Append successful. Locators: {msg_loc}. Checkbox: {msg_cb}")
+                                # ล้าง template หลังจาก append สำเร็จ
+                                st.session_state['checkbox_template'] = {'enabled': False}
+                            else:
+                                st.error(f"Locator append error: {msg_loc} | Checkbox append error: {msg_cb}")
 
             elif save_option == "Create New File":
                 st.caption("File will be saved in the `pageobjects` folder.")
@@ -3032,13 +3432,234 @@ def render_resources_view_new():
                     key="locator_new_filename"
                 )
                 
+                # ✅ เพิ่ม: แสดงสถานะ Checkbox Template
+                show_checkbox_template_status()
+                
                 if st.button("📝 Create and Save File", key="create_locators_btn"):
-                    if not html_locators or not locators_string:
-                        st.warning("No new locators from HTML to save.")
+                    has_locators = bool(html_locators and locators_string)
+                    has_checkbox_template = st.session_state.get('checkbox_template', {}).get('enabled', False)
+
+                    if not has_locators and not has_checkbox_template:
+                        st.warning("No new locators or checkbox template to save.")
                     elif not new_file_name.endswith(('.robot', '.resource')):
                         st.error("File name must end with .robot or .resource")
                     else:
-                        full_content = textwrap.dedent(f"""
+                        
+                        # ✅ แก้ไข: ใช้ฟังก์ชันใหม่ในการสร้าง Content
+                        full_content = generate_file_content_with_checkbox(locators_string)
+                        
+                        save_dir = os.path.join(st.session_state.project_path, "pageobjects")
+                        os.makedirs(save_dir, exist_ok=True)
+                        full_path = os.path.join(save_dir, new_file_name)
+                        
+                        success = create_new_robot_file(full_path, full_content)
+                        if success:
+                            st.session_state['show_file_created_success'] = {
+                                'path': os.path.relpath(full_path, st.session_state.project_path)
+                            }
+                            # ล้าง template หลังจากสร้างไฟล์สำเร็จ
+                            st.session_state['checkbox_template'] = {'enabled': False}
+                            st.session_state.project_structure = scan_robot_project(st.session_state.project_path)
+                            st.rerun()
+                        else:
+                            st.error("Failed to create the file.")
+       
+        if 'show_file_created_success' in st.session_state and st.session_state.show_file_created_success:
+            success_data = st.session_state.show_file_created_success
+            st.success(f"✅ Successfully created file at `{success_data['path']}`")
+            del st.session_state.show_file_created_success
+
+
+# ========================================================================
+# 1. ฟังก์ชันแยก Checkbox จาก Locators ปกติ
+# ========================================================================
+
+def separate_checkbox_from_locators(all_locators):
+    """
+    แยก normal locators และ checkbox locators
+    
+    Args:
+        all_locators: List of all locators
+    
+    Returns:
+        tuple: (normal_locators, checkbox_locators)
+    """
+    normal = []
+    checkbox = []
+    
+    for loc in all_locators:
+        if '_CHECKBOX' in loc.get('name', '').upper():
+            checkbox.append(loc)
+        else:
+            normal.append(loc)
+    
+    return normal, checkbox
+
+
+# ========================================================================
+# 2. ฟังก์ชันแสดง Checkbox Count + ปุ่ม Generate
+# ========================================================================
+
+def show_checkbox_count_and_button():
+    """
+    แสดงจำนวน checkbox และปุ่ม Generate
+    เรียกใช้หลังจาก st.markdown("From HTML (Editable)")
+    """
+    ws_state = st.session_state.studio_workspace
+    checkbox_count = len(ws_state.get('checkbox_locators', []))
+    
+    if checkbox_count > 0:
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            st.info(f"🔲 Found {checkbox_count} checkboxes")
+        
+        with col2:
+            if st.button("🔲 Generate", key="gen_checkbox_btn", use_container_width=True):
+                st.session_state['show_checkbox_generator'] = True
+                st.rerun()
+
+
+# ========================================================================
+# 3. ฟังก์ชัน UI Checkbox Generator (Form สำหรับ config)
+# ========================================================================
+
+def show_checkbox_generator_ui():
+    """
+    แสดง UI สำหรับ config checkbox template
+    """
+    if not st.session_state.get('show_checkbox_generator', False):
+        return
+    
+    st.markdown("---")
+    st.markdown("#### 📋 Checkbox Template Generator")
+    
+    # ดึงข้อมูลที่บันทึกไว้
+    page_name = st.session_state.get('checkbox_page_name', 'Page')
+    detected_pattern = st.session_state.get('checkbox_pattern', '')
+    framework = st.session_state.get('checkbox_framework', 'standard')
+    description = st.session_state.get('checkbox_description', '')
+    
+    with st.container(border=True):
+        # แสดงข้อมูล framework ที่ detect ได้
+        st.info(f"🎯 Detected Framework: **{framework.upper().replace('_', ' ')}**")
+        st.caption(f"Pattern: {description}")
+        
+        # Input: Page Name
+        page_name = st.text_input(
+            "Page Name:",
+            value=page_name,
+            key="checkbox_page_name_input",
+            help="Auto-detected from HTML. You can edit it.",
+            placeholder="e.g., RoleManagement"
+        )
+                
+        # Preview
+        if page_name and detected_pattern:
+            st.markdown("---")
+            st.markdown("**Suggestion:**")
+            
+            try:
+                generated_code = generate_checkbox_template_and_keyword(page_name, detected_pattern)
+                
+                variables_preview = generated_code.get('variables', '# Error').replace('*** Variables ***\n', '').strip()
+                keywords_preview = generated_code.get('keywords', '# Error').replace('*** Keywords ***\n', '').strip()
+                
+                st.markdown("`*** Variables ***`")
+                st.code(variables_preview, language="robotframework")
+                
+                st.markdown("`*** Keywords ***`")
+                st.code(keywords_preview, language="robotframework")
+                
+            except Exception as e:
+                st.error(f"Error generating preview: {e}")
+        
+            if st.button("❌ Close", key="cancel_checkbox_btn", use_container_width=True):
+                st.session_state['show_checkbox_generator'] = False
+                st.rerun()
+
+# ========================================================================
+# 4. ฟังก์ชัน Append Checkbox (ใช้ใน Append Button)
+# ========================================================================
+
+def append_checkbox_template_to_file(file_path):
+    """
+    Append checkbox template และ keyword เข้าไฟล์
+    
+    Args:
+        file_path: Path to robot file
+    
+    Returns:
+        tuple: (success, message)
+    """
+    checkbox_template = st.session_state.get('checkbox_template', {})
+    
+    if not checkbox_template.get('enabled'):
+        return True, "No checkbox template to append"
+    
+    try:        
+        # Generate template and keyword
+        result = generate_checkbox_template_and_keyword(
+            checkbox_template['page_name'],
+            checkbox_template['xpath']
+        )
+        
+        # Append checkbox variable
+        success1, msg1 = append_robot_content_intelligently(
+            file_path,
+            variables_code=result['variables']
+        )
+        
+        # Append checkbox keyword
+        success2, msg2 = append_robot_content_intelligently(
+            file_path,
+            keywords_code=result['keywords']
+        )
+        
+        # Clear template after append
+        st.session_state['checkbox_template'] = {'enabled': False}
+        
+        if success1 and success2:
+            return True, "✅ Locators and checkbox template appended"
+        else:
+            return False, f"Error: {msg1}, {msg2}"
+    
+    except Exception as e:
+        return False, f"Error appending checkbox: {str(e)}"
+
+
+# ========================================================================
+# 5. ฟังก์ชัน Generate Content สำหรับ Create New File
+# ========================================================================
+
+def generate_file_content_with_checkbox(locators_string):
+    """
+    Generate file content รวม checkbox template
+    
+    Args:
+        locators_string: String of normal locators
+    
+    Returns:
+        str: Full file content
+    """
+    import textwrap
+    
+    # Generate checkbox content if enabled
+    checkbox_content = ""
+    checkbox_template = st.session_state.get('checkbox_template', {})
+    
+    if checkbox_template.get('enabled'):
+        try:            
+            result = generate_checkbox_template_and_keyword(
+                checkbox_template['page_name'],
+                checkbox_template['xpath']
+            )
+            checkbox_content = "\n\n" + result['variables'] + "\n" + result['keywords']
+        except Exception as e:
+            st.warning(f"Could not generate checkbox template: {e}")
+    
+    # Create full content
+    full_content = textwrap.dedent(f"""
 *** Settings ***
 Resource            ../resources/commonkeywords.resource
 
@@ -3049,25 +3670,37 @@ Resource            ../resources/commonkeywords.resource
 {locators_string}
 
 # ---  END: Generated by Robot Framework Code Generator  ---
+{checkbox_content}
 """)
-                        save_dir = os.path.join(st.session_state.project_path, "pageobjects")
-                        os.makedirs(save_dir, exist_ok=True)
-                        full_path = os.path.join(save_dir, new_file_name)
-                        
-                        success = create_new_robot_file(full_path, full_content)
-                        if success:
-                            st.session_state['show_file_created_success'] = {
-                                'path': os.path.relpath(full_path, st.session_state.project_path)
-                            }
-                            st.session_state.project_structure = scan_robot_project(st.session_state.project_path)
-                            st.rerun()
-                        else:
-                            st.error("Failed to create the file.")
-       
-        if 'show_file_created_success' in st.session_state and st.session_state.show_file_created_success:
-            success_data = st.session_state.show_file_created_success
-            st.success(f"✅ Successfully created file at `{success_data['path']}`")
-            del st.session_state.show_file_created_success
+    
+    return full_content
+
+
+# ========================================================================
+# 6. ฟังก์ชันแสดงสถานะ Checkbox Template (Optional)
+# ========================================================================
+
+def show_checkbox_template_status():
+    """
+    แสดงสถานะ checkbox template ที่จะ export
+    เรียกใช้ในส่วน Export Options
+    """
+    checkbox_template = st.session_state.get('checkbox_template', {})
+    
+    if checkbox_template.get('enabled'):
+        with st.container(border=True):
+            st.markdown("**📋 Checkbox Template:**")
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                st.caption(f"✅ Page: {checkbox_template['page_name']}")
+                st.caption(f"✅ Variable: ${{{checkbox_template['variable']}}}")
+                st.caption(f"✅ Keyword: {checkbox_template['keyword']}")
+            
+            with col2:
+                if st.button("❌ Remove", key="remove_checkbox_template"):
+                    st.session_state['checkbox_template'] = {'enabled': False}
+                    st.rerun()
 
 # ============================================================================
 # MAIN APPLICATION

@@ -9,6 +9,11 @@ import re
 # Make sure utils functions are imported correctly
 from .utils import format_robot_step_line, convert_json_path_to_robot_accessor, generate_arg_name_from_locator
 
+# --- START: Import Defaults ---
+# (Need these for the deprecated functions)
+from .utils import FILL_FORM_DEFAULTS, VERIFY_FORM_DEFAULTS
+# --- END: Import Defaults ---
+
 # --- Initialization and Basic Getters/Setters (No changes needed) ---
 def initialize_workspace():
     if 'keyword_factory_workspace' not in st.session_state:
@@ -233,6 +238,74 @@ def add_quick_verify_steps_with_custom_args(keyword_id, locators_with_custom_arg
     # Sort args list
     kw['args'] = sorted(kw['args'], key=lambda x: x['name'])
 
+
+# --- START: [FIX] RESTORED LOGIC ---
+def add_quick_verify_detail_steps_with_custom_args(keyword_id, locators_with_custom_args):
+    """
+    Adds 'Verify data form' steps for detail page verification.
+    This version now includes optional args from the dialog.
+    """
+    kw = get_keyword(keyword_id)
+    if not kw:
+        return
+
+    if 'args' not in kw or not isinstance(kw['args'], list):
+        kw['args'] = []
+
+    current_arg_names = {arg['name'] for arg in kw['args']}
+
+    for loc_name, custom_args in locators_with_custom_args.items():
+        # Generate suggested variable name for expected value (without ${})
+        arg_var = generate_arg_name_from_locator(loc_name)
+        if not arg_var:  # Handle cases where generation fails
+            clean_loc = loc_name.replace('LOCATOR_', '').lower()
+            arg_var = f"${{{clean_loc or 'expected'}}}"
+
+        # Build the args for this verification step
+        step_args = {
+            "locator_field": loc_name,
+            "exp_value": arg_var,
+            "assertion": custom_args.get('assertion', 'should be')
+        }
+        
+        # --- START: RESTORED LOGIC ---
+        # (Note: custom_args keys match the config keys from the dialog)
+        if custom_args.get('is_switch_type'):
+            step_args['is_switchtype'] = True # Arg name for the keyword
+            step_args['locator_switch_checked'] = custom_args.get('locator_switch_checked', '${EMPTY}')
+        
+        if custom_args.get('is_antdesign'): # This is always False
+            step_args['antdesign'] = True
+            
+        if custom_args.get('ignorcase'):
+            step_args['ignorcase'] = True
+        
+        # Add select_attribute if provided (not None)
+        select_attr = custom_args.get('select_attribute') # This is sent from generate_verify_steps
+        if select_attr is not None:
+            step_args['select_attribute'] = select_attr
+        # --- END: RESTORED LOGIC ---
+
+        new_step = {
+            "id": str(uuid.uuid4()),
+            "keyword": "Verify data form",  # Use the same keyword as regular verify
+            "args": step_args
+        }
+
+        if 'steps' not in kw:
+            kw['steps'] = []
+        kw['steps'].append(new_step)
+
+        # Add the new argument dictionary if the name isn't already present
+        if arg_var not in current_arg_names:
+            kw['args'].append({'name': arg_var, 'default': ''})  # Add as dict
+            current_arg_names.add(arg_var)  # Update the set
+
+    # Sort args list after adding potentially multiple new ones
+    kw['args'] = sorted(kw['args'], key=lambda x: x['name'])
+# --- END: [FIX] RESTORED LOGIC ---
+
+
 # --- *** Script Generation (Correct version from previous steps) *** ---
 def generate_robot_script_for_keyword(keyword_id):
     kw = get_keyword(keyword_id)
@@ -256,19 +329,6 @@ def generate_robot_script_for_keyword(keyword_id):
                     args_parts.append(arg_name)
         if args_parts:
             script.append(f"    [Arguments]    {'    '.join(args_parts)}")
-
-    # # --- Documentation Section ---
-    # doc = kw.get('doc')
-    # if doc:
-    #     doc_lines = doc.split('\n')
-    #     script.append(f"    [Documentation]    {doc_lines[0]}")
-    #     for line in doc_lines[1:]:
-    #         script.append(f"    ...    {line}") # Consistent 4 spaces before ...
-
-    # # --- Tags Section ---
-    # tags = kw.get('tags')
-    # if tags:
-    #     script.append(f"    [Tags]    {', '.join(tags)}") # Use comma space
 
 # --- Steps Section ---
     steps = kw.get('steps') # Corrected variable name
@@ -319,13 +379,20 @@ def generate_robot_script_for_keyword(keyword_id):
             lines = formatted_lines_str.split('\n')
 
             if lines:
-                script.append(f"{current_indent_str}{lines[0]}") # บรรทัดแรก
-                if len(lines) > 1:
-                    for line in lines[1:]: # บรรทัดต่อเนื่อง
-                        if line.strip().startswith("..."):
-                            script.append(f"{current_indent_str}{line}") # Indent เท่าเดิม
-                        else:
-                            script.append(f"{current_indent_str}{base_indent}{line}") # Indent เพิ่ม
+                # --- START: MODIFIED (Ensure empty string steps are not skipped) ---
+                if not formatted_lines_str and keyword_name:
+                     # This happens if format_robot_step_line returns ""
+                     # but we should at least print the keyword
+                     script.append(f"{current_indent_str}{keyword_name}")
+                elif lines[0]: # Check if first line is not empty
+                     script.append(f"{current_indent_str}{lines[0]}") # บรรทัดแรก
+                     if len(lines) > 1:
+                          for line in lines[1:]: # บรรทัดต่อเนื่อง
+                              if line.strip().startswith("..."):
+                                  script.append(f"{current_indent_str}{line}") # Indent เท่าเดิม
+                              else:
+                                  script.append(f"{current_indent_str}{base_indent}{line}") # Indent เพิ่ม
+                # --- END: MODIFIED ---
 
             # --- Logic เดิมสำหรับ Set Variable (ใช้ current_indent_str) ---
             output_config = step.get('output_variable', {})
@@ -341,7 +408,12 @@ def generate_robot_script_for_keyword(keyword_id):
                     robot_accessor = convert_json_path_to_robot_accessor(source_detail)
                     if robot_accessor: value_to_set = f"${{GLOBAL_RESPONSE_JSON}}{robot_accessor}"
                     else: print(f"Warning: Could not convert JSON Path '{source_detail}'.")
-                elif selected_source == "Specific Argument Value" and source_detail: value_to_set = f"${{{source_detail}}}"
+                elif selected_source == "Specific Argument Value" and source_detail: 
+                    # Fix: Ensure it's formatted as a variable if it's just a name
+                    if source_detail.startswith('$'):
+                        value_to_set = source_detail
+                    else:
+                        value_to_set = f"${{{source_detail}}}"
                 elif selected_source == "Manual Value/Variable" and source_detail: value_to_set = source_detail
 
                 if var_name:
