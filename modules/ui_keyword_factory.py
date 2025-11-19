@@ -1,21 +1,22 @@
 """
 UI Module for the Keyword Factory Tab
-(Incorporating Argument Manager, Output Variables, Suggestions, Reordering)
+(MODIFIED: Includes auto-import logic from 'pageobjects')
 """
 import streamlit as st
 import uuid
 import json
-import os
+import os  # <--- ตรวจสอบว่ามี import นี้
 import re
 import textwrap
 from . import kw_manager
 from .session_manager import get_clean_locator_name
-from .ui_common import render_argument_input, ARGUMENT_PRESETS, ARGUMENT_PATTERNS # Import PATTERNS
+from .ui_common import render_argument_input, ARGUMENT_PRESETS, ARGUMENT_PATTERNS
 from .dialog_commonkw import render_add_step_dialog_base
-from .file_manager import append_robot_content_intelligently, create_new_robot_file, scan_robot_project # Added scan_robot_project
+from .file_manager import append_robot_content_intelligently, create_new_robot_file, scan_robot_project
 from .test_flow_manager import categorize_keywords
 from datetime import datetime
-from .utils import scan_steps_for_variables, generate_arg_name_from_locator, format_args_as_string, format_args_as_multiline_string  # Added format_args_as_string
+from .utils import parse_robot_keywords  # <--- ตรวจสอบว่ามี import นี้
+from .utils import scan_steps_for_variables, generate_arg_name_from_locator, format_args_as_string, format_args_as_multiline_string
 from .utils import FILL_FORM_DEFAULTS, VERIFY_FORM_DEFAULTS
 from .simplified_quick_fill_dialog import render_kw_factory_fill_form_dialog as render_simplified_fill
 from .simplified_quick_verify_dialog import render_kw_factory_verify_detail_dialog as render_simplified_verify
@@ -25,8 +26,7 @@ def render_keyword_factory_tab():
     """
     Main entry point for the Keyword Factory Tab
     """
-    # Use styles from ui_crud, they are very similar
-    from .crud_generator.ui_crud import inject_hybrid_css # Keep this specific import if styles are there
+    from .crud_generator.ui_crud import inject_hybrid_css
     from .ui_common import extract_csv_datasource_keywords
     inject_hybrid_css()
 
@@ -35,48 +35,178 @@ def render_keyword_factory_tab():
 
     # --- Main View Switching (List vs. Editor) ---
     if ws.get('active_keyword_id') is None:
-        render_keyword_list_view(ws)
+        render_keyword_list_view(ws) # <--- เราจะแก้ไขฟังก์ชันนี้
     else:
         render_keyword_editor_view(ws)
 
-# ======= LIST VIEW =======
+# ======= LIST VIEW (ฉบับแก้ไขใหม่) =======
 def render_keyword_list_view(ws):
     """
     Displays the list of all created keywords and a button to create new ones.
+    (MODIFIED: Includes auto-import logic from 'pageobjects')
     """
     st.markdown("#### 🏭 Keyword Factory", unsafe_allow_html=True)
     st.caption("Create and manage reusable, high-level keywords from smaller steps.")
 
+    # --- START: NEW Auto-Import Logic ---
+    
+    # 1. Initialize the flag if it doesn't exist
+    if 'project_keywords_auto_imported' not in st.session_state:
+        st.session_state.project_keywords_auto_imported = False
+
+    project_path = st.session_state.get("project_path")
+    project_structure = st.session_state.get("project_structure")
+
+    # 2. Check if we need to run the import
+    if project_path and project_structure and not st.session_state.project_keywords_auto_imported:
+        
+        all_robot_files = project_structure.get('robot_files', [])
+        target_folder = "pageobjects"
+        pageobject_files = [
+            f for f in all_robot_files 
+            if f.replace(os.sep, '/').startswith(target_folder + '/')
+        ]
+        
+        if pageobject_files:
+            new_keywords_imported_count = 0
+            
+            # ใช้ st.spinner เพื่อแสดงสถานะการโหลด
+            with st.spinner(f"Scanning {len(pageobject_files)} files in `pageobjects` for keywords..."):
+                for rel_path in pageobject_files:
+                    full_path = os.path.join(project_path, rel_path)
+                    try:
+                        with open(full_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        
+                        parsed_keywords = parse_robot_keywords(content)
+                        
+                        for kw in parsed_keywords:
+                            # ใช้ import function (ซึ่งตอนนี้เช็คซ้ำแบบเงียบๆ แล้ว)
+                            new_id = kw_manager.import_existing_keyword(
+                                kw['name'], 
+                                kw.get('args', []), 
+                                kw.get('doc', 'Imported keyword.'),
+                                tags=['Imported', f"from:{target_folder}"] # เพิ่ม Tag
+                            )
+                            if new_id:
+                                new_keywords_imported_count += 1
+                                
+                    except Exception as e:
+                        st.warning(f"Could not parse {rel_path}: {e}")
+
+            if new_keywords_imported_count > 0:
+                 st.toast(f"Auto-imported {new_keywords_imported_count} new keywords from `pageobjects`.", icon="✅")
+        
+        # 3. Set the flag to True so this doesn't run again
+        st.session_state.project_keywords_auto_imported = True
+        
+        # 4. Rerun to refresh the list immediately
+        st.rerun()
+    
+    # --- END: NEW Auto-Import Logic ---
+
+    # ปุ่มสร้าง Keyword ใหม่
     if st.button("➕ Create New Keyword", width='content', type="secondary"):
         kw_manager.create_new_keyword()
         st.rerun()
 
     all_keywords = kw_manager.get_all_keywords()
-
-    if not all_keywords:
-        st.info("No keywords created yet. Click 'Create New Keyword' to start.")
-        return
-
+    
+    st.markdown("---") 
     st.markdown("#### Manage Existing Keywords")
 
+    # --- NEW: Add CSS for Tags ---
+    st.markdown("""
+    <style>
+    .tag-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 5px;
+    }
+    .tag {
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 2px 6px;
+        border-radius: 10px;
+        background-color: #30363d; /* Default tag color */
+        color: #8b949e;
+        border: 1px solid #484f58;
+    }
+    .tag-imported { /* Specific style for 'imported' tag */
+        background-color: rgba(56, 139, 253, 0.1);
+        color: #79c0ff;
+        border: 1px solid rgba(56, 139, 253, 0.4);
+    }
+    .tag-from { /* Specific style for 'from:' tag */
+        background-color: rgba(110, 118, 129, 0.1);
+        color: #8b949e;
+        border: 1px solid rgba(110, 118, 129, 0.4);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    # --- END: Add CSS ---
+
+    if not all_keywords:
+        st.info("No keywords found. Create one, or set a project path in the sidebar to auto-import from `pageobjects`.")
+        return
+
     for kw in all_keywords:
+        
+        # --- START: เพิ่มตัวแปรเช็คสถานะ Import ---
+        is_imported = 'Imported' in kw.get('tags', [])
+        # --- END: เพิ่มตัวแปรเช็คสถานะ Import ---
+
         with st.container(border=True):
             cols = st.columns([4, 1, 1])
             with cols[0]:
                 st.markdown(f"**{kw.get('name', 'Untitled')}**")
-                # Display arguments correctly from list of dicts
+                
                 args_display = [f"{arg['name']}" + (f"={arg['default']}" if arg.get('default') else "")
                                 for arg in kw.get('args', [])]
-                st.caption(f"Arguments: {', '.join(args_display) or 'None'}")
-                st.caption(f"Steps: {len(kw.get('steps', []))}")
+                args_str = ', '.join(args_display) or 'None'
+                st.caption(f"Arguments: `{args_str}`") 
+                
+                # --- START: แก้ไข (ซ่อน Steps ถ้า Import มา) ---
+                if not is_imported:
+                    st.caption(f"Steps: {len(kw.get('steps', []))}")
+                # --- END: แก้ไข ---
+
+                tags = kw.get('tags', [])
+                if tags:
+                    tags_html = ""
+                    for tag in tags:
+                        tag_class = tag.split(':')[0].lower() 
+                        tags_html += f"<span class='tag tag-{tag_class}'>{tag}</span>"
+                    st.markdown(f"<div class='tag-container'>{tags_html}</div>", unsafe_allow_html=True)
+
+            # --- START: แก้ไข (ปิดปุ่มถ้า Import มา) ---
             with cols[1]:
-                if st.button("✏️ Edit", key=f"edit_kw_{kw['id']}", use_container_width=True):
-                    kw_manager.set_active_keyword(kw['id'])
-                    st.rerun()
+                if not is_imported:
+                    # Factory-created: ปุ่ม Edit ใช้งานได้
+                    if st.button("✏️ Edit", key=f"edit_kw_{kw['id']}", use_container_width=True):
+                        kw_manager.set_active_keyword(kw['id'])
+                        st.rerun()
+                else:
+                    # Imported: ปุ่ม Edit ปิดใช้งาน
+                    st.button("✏️", key=f"edit_kw_disabled_{kw['id']}", use_container_width=True, disabled=True, help="Imported keywords cannot be edited. Create a new keyword and add this as a step.")
+
             with cols[2]:
-                if st.button("🗑️ Delete", key=f"del_kw_{kw['id']}", use_container_width=True):
-                    kw_manager.delete_keyword(kw['id'])
-                    st.rerun()
+                if not is_imported:
+                    # Factory-created: ปุ่ม Delete ใช้งานได้
+                    if st.button("🗑️ Delete", key=f"del_kw_{kw['id']}", use_container_width=True):
+                        kw_manager.delete_keyword(kw['id'])
+                        st.rerun()
+                else:
+                    # Imported: ปุ่ม Delete ปิดใช้งาน
+                    st.button("🗑️", key=f"del_kw_disabled_{kw['id']}", use_container_width=True, disabled=True, help="Imported keywords cannot be deleted.")
+            # --- END: แก้ไข ---
+
+
+# ======= (โค้ดส่วนที่เหลือของไฟล์ ui_keyword_factory.py) =======
+# (ฟังก์ชัน render_keyword_editor_view และอื่นๆ
+#  ให้คงไว้เหมือนเดิม ไม่ต้องลบครับ)
+# ==========================================================
 
 # ======= EDITOR VIEW =======
 def render_keyword_editor_view(ws):
@@ -231,21 +361,24 @@ def render_keyword_editor_view(ws):
             st.markdown("---") # เส้นคั่น
 
         # --- 2. Quick Templates ---
-        with st.expander("⚡Quick Step Templates", expanded=False):
-            st.info("Add multiple steps at once based on locators.")
-            t_col1, t_col2 = st.columns(2)
-            with t_col1:
-                if st.button("✏️ Quick Fill Form", use_container_width=True):
-                    st.session_state.show_kw_factory_fill_form_dialog = True
-                    st.session_state['kw_factory_add_dialog_context'] = {"key": keyword_id}
-                    st.rerun()
-            with t_col2:
-                if st.button("🔍 Quick Verify Detail", use_container_width=True):
-                    st.session_state.show_kw_factory_verify_detail_dialog = True
-                    st.session_state['kw_factory_add_dialog_context'] = {"key": keyword_id}
-                    st.rerun()
+        st.markdown("---") # เพิ่มเส้นคั่น
+        st.markdown("**⚡ Quick Step Templates**")
+        st.caption("Add multiple steps at once based on locators.")
+        
+        t_col1, t_col2 = st.columns(2)
+        with t_col1:
+            if st.button("✏️ Quick Fill Form", use_container_width=True):
+                st.session_state.show_kw_factory_fill_form_dialog = True
+                st.session_state['kw_factory_add_dialog_context'] = {"key": keyword_id}
+                st.rerun()
+        with t_col2:
+            if st.button("🔍 Quick Verify Detail", use_container_width=True):
+                st.session_state.show_kw_factory_verify_detail_dialog = True
+                st.session_state['kw_factory_add_dialog_context'] = {"key": keyword_id}
+                st.rerun()
 
         # --- 3. Step Editor ---
+        st.markdown("---") # เพิ่มเส้นคั่น
         st.markdown("#### 👣 Keyword Steps")
         steps = kw.get('steps', [])
         indent_level = 0 # Track indent level for IF/END display

@@ -810,14 +810,19 @@ class HTMLLocatorParser:
                 self.found_identifiers.add(variable_name)
         
         return fields
-    def parse_html(self, html_content: str) -> List[LocatorField]:
+    
+    def parse_html(self, html_content: str, page_category: str = '') -> List[LocatorField]:
         """
         Main parsing function to extract all locators from HTML.
+        Args:
+            html_content: The HTML string to parse.
+            page_category: Optional prefix category (e.g., 'MAINLIST', 'DETAIL')
+                         to prepend to all locator variables.
         """
         self.found_identifiers.clear()
         soup = BeautifulSoup(html_content, 'html.parser')
         
-
+        # เรียกใช้ extract methods ทั้งหมด (ใช้โค้ดเดิมของคุณที่มีอยู่แล้ว)
         all_fields = (
             (self.extract_form_fields(soup) or []) +
             (self.extract_upload_fields(soup) or []) +
@@ -831,7 +836,7 @@ class HTMLLocatorParser:
             (self.extract_checkboxes(soup) or [])
         )
         
-        # Post-process: ถ้ามี *_INPUT และ *_SELECT พร้อมกัน ให้เก็บ *_INPUT อย่างเดียว
+        # Post-process: กรอง Priority (Logic เดิม)
         preferred: dict[str, tuple[int, LocatorField]] = {}
         suffix_rank = {'_INPUT': 1, '_SELECT': 2}
 
@@ -856,6 +861,18 @@ class HTMLLocatorParser:
 
         unique_fields = [t[1] for t in preferred.values()]
         unique_fields.sort(key=lambda f: f.priority)
+
+        # ✅ LOGIC ใหม่: เติม Page Category Prefix
+        if page_category:
+            # Sanitize category: ตัวพิมพ์ใหญ่, ตัดอักขระพิเศษ
+            clean_category = re.sub(r'[^a-zA-Z0-9_]', '_', page_category).upper().strip('_')
+            
+            if clean_category:
+                for field in unique_fields:
+                    # เติม Prefix: เช่น SAVE_BTN -> MAINLIST_SAVE_BTN
+                    # ผลลัพธ์สุดท้ายใน app.py จะเป็น LOCATOR_MAINLIST_SAVE_BTN
+                    field.variable = f"{clean_category}_{field.variable}"
+
         return unique_fields
 
 

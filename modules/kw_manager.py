@@ -424,3 +424,36 @@ def generate_robot_script_for_keyword(keyword_id):
     # Add a newline at the end for spacing between keywords
     script.append("")
     return "\n".join(script)
+
+def import_existing_keyword(name, args, doc, tags=None):
+    """
+    Imports an existing, parsed keyword into the factory workspace.
+    Args/doc are taken from the parsed .robot file.
+    (MODIFIED: Silent operation - no st.warning)
+    """
+    if tags is None:
+        tags = ['Imported'] # เพิ่ม Tag พิเศษ
+    
+    ws = _get_workspace()
+    
+    # ตรวจสอบว่ามีชื่อนี้ใน Factory แล้วหรือยัง
+    if any(kw['name'].lower() == name.lower() for kw in ws['keywords']):
+        # ทำงานแบบเงียบๆ ถ้าซ้ำ
+        return None 
+    
+    new_id = str(uuid.uuid4())
+    
+    # สร้าง Keyword object ใหม่ใน state
+    # เราสมมติว่า 'args' ที่รับเข้ามาจาก parser
+    # อยู่ในรูปแบบ list of dicts ที่ถูกต้องแล้ว
+    # (ซึ่ง parser ใน utils.py ทำแบบนั้นอยู่แล้ว)
+    new_kw = {
+        'id': new_id,
+        'name': name,
+        'doc': doc,
+        'args': args, # ใช้ args ที่ parse มาได้เลย
+        'steps': [],  # Keyword ที่ Import มาจะเริ่มโดยไม่มี step
+        'tags': tags
+    }
+    ws['keywords'].append(new_kw)
+    return new_id

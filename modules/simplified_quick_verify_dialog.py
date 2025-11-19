@@ -202,9 +202,27 @@ def render_kw_factory_verify_detail_dialog():
     
     # Display selected fields
     if selected_fields:
+        
+        # --- START: เพิ่มช่องค้นหาสำหรับ Selected Fields ---
+        search_selected_key = f"{dialog_key}_search_selected"
+        search_query_selected = st.text_input(
+            f"🔎 Search Selected Fields ({len(selected_fields)} total)",
+            key=search_selected_key,
+            placeholder="Type to filter selected fields..."
+        )
+
+        if search_query_selected:
+            fields_to_display = [
+                loc_name for loc_name in selected_fields 
+                if search_query_selected.upper() in get_clean_locator_name(loc_name).upper()
+            ]
+        else:
+            fields_to_display = selected_fields
+        # --- END: เพิ่มช่องค้นหา ---
+
         col_title, col_add = st.columns([3, 1])
-        with col_title:
-            st.markdown(f"**📋 Selected:** {len(selected_fields)} fields")
+        # with col_title:
+        #     st.markdown(f"**📋 Selected:** {len(fields_to_display)} fields")
         with col_add:
             if st.button("➕ Add More", key=f"{dialog_key}_add_btn", use_container_width=True):
                 st.session_state[f"{dialog_key}_show_add_field"] = True
@@ -212,12 +230,15 @@ def render_kw_factory_verify_detail_dialog():
         
         # Compact field chips (3 per row with inline X button)
         num_cols = 3
-        for i in range(0, len(selected_fields), num_cols):
+
+        # --- แก้ไข: ใช้ fields_to_display ---
+        for i in range(0, len(fields_to_display), num_cols):
             cols = st.columns(num_cols)
             for j in range(num_cols):
                 idx = i + j
-                if idx < len(selected_fields):
-                    field_name = selected_fields[idx]
+                if idx < len(fields_to_display):
+                    field_name = fields_to_display[idx]
+        # --- สิ้นสุดการแก้ไข ---
                     clean_name = get_clean_locator_name(field_name)
                     
                     with cols[j]:
@@ -230,7 +251,8 @@ def render_kw_factory_verify_detail_dialog():
                                 unsafe_allow_html=True
                             )
                         with chip_col2:
-                            if st.button("❌", key=f"{dialog_key}_chip_del_{idx}", help="Remove"):
+                            # --- แก้ไข: ใช้ field_name ใน key เพื่อให้ลบได้ถูกต้อง ---
+                            if st.button("❌", key=f"{dialog_key}_chip_del_{field_name}", help="Remove"):
                                 st.session_state[selected_fields_key].remove(field_name)
                                 if field_name in st.session_state[configs_key]:
                                     del st.session_state[configs_key][field_name]
@@ -377,12 +399,12 @@ def render_kw_factory_verify_detail_dialog():
         header_html = """
         <div class="header-row" style="display: flex; gap: 5px; align-items: left;">
             <div class="header-cell" style="flex: 2;">Field</div>
-            <div class="header-cell" style="flex: 0.5;">is sel?</div>
+            <div class="header-cell" style="flex: 0.5;">select?</div>
             <div class="header-cell" style="flex: 0.8;">Sel Attr</div>
             <div class="header-cell" style="flex: 1;">Assertion</div>
-            <div class="header-cell" style="flex: 0.5;">🔘 switch</div>
+            <div class="header-cell" style="flex: 0.5;">🔘 switch?</div>
             <div class="header-cell" style="flex: 1;">Locator Switch Checked</div>
-            <div class="header-cell" style="flex: 0.5;">ign case?</div>
+            <div class="header-cell" style="flex: 0.5;">ignoreCase?</div>
             <div class="header-cell" style="flex: 0.4;">Del</div>
         </div>
         """
