@@ -14,7 +14,7 @@ from . import manager
 from ..session_manager import get_clean_locator_name
 from ..ui_common import render_argument_input, render_step_card_compact, extract_csv_datasource_keywords, ARGUMENT_PRESETS
 from ..dialog_commonkw import render_add_step_dialog_base
-from ..utils import format_args_as_string
+from modules.utils import format_args_as_string, util_get_csv_first_column_values
 
 # ======= ENTRY POINT FUNCTION =======
 def render_crud_generator_tab():
@@ -1205,7 +1205,7 @@ def render_kw_factory_import_dialog():
                     with st.expander("📊 Quick Insert from CSV Data", expanded=False):
                         st.caption("Insert CSV value into a specific argument")
                         
-                        col_ds, col_row, col_column, col_target = st.columns([2, 2, 2, 2])
+                        col_ds, col_test = st.columns([1, 1])
                         
                         quick_ds = None
                         with col_ds:
@@ -1216,14 +1216,29 @@ def render_kw_factory_import_dialog():
                             )
                         
                         quick_row_val = ""
-                        with col_row:
-                            quick_row_val = st.text_input(
-                                "Row Key",
-                                key="quick_csv_row_kw_factory",
-                                placeholder="e.g., robotapi"
-                            )
+                        with col_test:
+                            first_col_options = []
+                            if quick_ds:
+                                ds_info = csv_keywords.get(quick_ds, {})
+                                csv_filename = ds_info.get('csv_filename', '')
+                                project_path = st.session_state.get('project_path', '')
+                                first_col_options = util_get_csv_first_column_values(project_path, csv_filename)
+                            
+                            if first_col_options:
+                                quick_row_val = st.selectbox(
+                                    "Row Data Key",
+                                    options=first_col_options,
+                                    key="quick_csv_row_kw_factory"
+                                )
+                            else:
+                                quick_row_val = st.text_input(
+                                    "Row Data Key",
+                                    key="quick_csv_row_kw_factory",
+                                    placeholder="e.g., robotapi"
+                                )
                         
                         quick_col = None
+                        col_column, col_target = st.columns([1, 1])
                         headers = []
                         if quick_ds:
                             ds_info = csv_keywords.get(quick_ds, {})
@@ -1388,9 +1403,9 @@ def render_fill_form_dialog():
         csv_keywords = extract_csv_datasource_keywords(ws_state)
         
         if csv_keywords:
-            quick_col1, quick_col2, quick_col3 = st.columns([2, 2, 2])
+            col_ds, col_test = st.columns([1, 1])
             
-            with quick_col1:
+            with col_ds:
                 quick_ds = st.selectbox(
                     "Data Source",
                     options=list(csv_keywords.keys()),
@@ -1402,14 +1417,28 @@ def render_fill_form_dialog():
                 headers = ds_info.get('headers', [])
                 
                 if headers:
-                    with quick_col2:
-                        quick_row = st.text_input(
-                            "Row Key",
-                            key="quick_csv_row_fill",
-                            placeholder="e.g., robotapi"
-                        )
+                    with col_test:
+                        first_col_options = []
+                        if quick_ds:
+                            ds_info = csv_keywords[quick_ds]
+                            csv_filename = ds_info.get('csv_filename', '')
+                            project_path = st.session_state.get('project_path', '')
+                            first_col_options = util_get_csv_first_column_values(project_path, csv_filename)
+                        
+                        if first_col_options:
+                            quick_row = st.selectbox(
+                                "Row Data Key",
+                                options=first_col_options,
+                                key="quick_csv_row_fill"
+                            )
+                        else:
+                            quick_row = st.text_input(
+                                "Row Data Key",
+                                key="quick_csv_row_fill",
+                                placeholder="e.g., robotapi"
+                            )
                     
-                    with quick_col3:
+                    with col_column:
                         if len(headers) > 1:
                             quick_col = st.selectbox(
                                 "Column",
@@ -1723,9 +1752,9 @@ def render_verify_detail_dialog():
         csv_keywords = extract_csv_datasource_keywords(ws_state)
         
         if csv_keywords:
-            quick_col1, quick_col2, quick_col3 = st.columns([2, 2, 2])
+            col_ds, col_test = st.columns([1, 1])
             
-            with quick_col1:
+            with col_ds:
                 quick_ds = st.selectbox(
                     "Data Source",
                     options=list(csv_keywords.keys()),
@@ -1737,14 +1766,29 @@ def render_verify_detail_dialog():
                 headers = ds_info.get('headers', [])
                 
                 if headers:
-                    with quick_col2:
-                        quick_row = st.text_input(
-                            "Row Key",
-                            key="quick_csv_row_verify",
-                            placeholder="e.g., robotapi"
-                        )
+                    with col_test:
+                        first_col_options = []
+                        if quick_ds:
+                            ds_info = csv_keywords[quick_ds]
+                            csv_filename = ds_info.get('csv_filename', '')
+                            project_path = st.session_state.get('project_path', '')
+                            first_col_options = util_get_csv_first_column_values(project_path, csv_filename)
+                        
+                        if first_col_options:
+                            quick_row = st.selectbox(
+                                "Row Data Key",
+                                options=first_col_options,
+                                key="quick_csv_row_verify"
+                            )
+                        else:
+                            quick_row = st.text_input(
+                                "Row Data Key",
+                                key="quick_csv_row_verify",
+                                placeholder="e.g., robotapi"
+                            )
+                        col_column, col_preview = st.columns([1, 1])
                     
-                    with quick_col3:
+                    with col_column:
                         if len(headers) > 1:
                             quick_col = st.selectbox(
                                 "Column",

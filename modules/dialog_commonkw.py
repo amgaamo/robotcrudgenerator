@@ -413,7 +413,8 @@ def render_add_step_dialog_base(
                     csv_keywords = extract_csv_datasource_keywords(ws_state)
                     
                     if csv_keywords and selected_kw and selected_kw.get('args'):
-                        col_ds, col_row, col_column, col_target = st.columns([2, 1.5, 1.5, 2])
+                        # ✅ แถว 1: Data Source + Data Test
+                        col_ds, col_test = st.columns([1, 1])
                         
                         with col_ds:
                             quick_ds = st.selectbox(
@@ -423,12 +424,31 @@ def render_add_step_dialog_base(
                             )
                         
                         quick_row_val = ""
-                        with col_row:
-                            quick_row_val = st.text_input(
-                                "Row Key",
-                                key=f"quick_csv_row_{dialog_state_key}",
-                                placeholder="e.g., robotapi"
-                            )
+                        with col_test:
+                            # ✅ ดึงข้อมูลจากคอลัมน์แรกของ CSV
+                            from modules.utils import util_get_csv_first_column_values
+                            first_col_options = []
+                            if quick_ds:
+                                ds_info = csv_keywords.get(quick_ds, {})
+                                csv_filename = ds_info.get('csv_filename', '')
+                                project_path = st.session_state.get('project_path', '')
+                                first_col_options = util_get_csv_first_column_values(project_path, csv_filename)
+                            
+                            if first_col_options:
+                                quick_row_val = st.selectbox(
+                                    "Row Data Key",
+                                    options=first_col_options,
+                                    key=f"quick_csv_row_{dialog_state_key}"
+                                )
+                            else:
+                                quick_row_val = st.text_input(
+                                    "Row Data Key",
+                                    key=f"quick_csv_row_{dialog_state_key}",
+                                    placeholder="e.g., robotapi"
+                                )
+                        
+                        # ✅ แถว 2: Column + Insert to →
+                        col_column, col_target = st.columns([1, 1])
                         
                         quick_col = None
                         headers = []
@@ -484,7 +504,7 @@ def render_add_step_dialog_base(
                                 if not target_arg:
                                     st.warning("Please select a target argument 'Insert to →'")
                                 elif not quick_row_val:
-                                    st.warning("Please enter a 'Row Key'")
+                                    st.warning("Please enter a 'Data Test'")
                                 elif insert_syntax:
                                     # ✅ Insert ค่าลง session_state
                                     kw_name_clean = selected_kw['name'].replace(' ', '_').replace('/', '_').replace('(', '').replace(')', '')

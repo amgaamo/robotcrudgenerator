@@ -1054,4 +1054,37 @@ def format_args_as_multiline_string(args_dict):
     html += '</div>'
     
     return html
-# --- END: MODIFIED ---
+
+def util_get_csv_first_column_values(project_path, csv_filename):
+    """
+    Reads all values from the first column of a CSV file (excluding header).
+    
+    Args:
+        project_path (str): The absolute project path
+        csv_filename (str): Name of the CSV file (e.g., 'login_data.csv')
+    
+    Returns:
+        list: List of values from first column, or empty list if file not found/error
+    """
+    if not project_path or not csv_filename:
+        return []
+    
+    csv_path = os.path.join(
+        project_path,
+        'resources',
+        'datatest',
+        csv_filename
+    )
+    
+    if not os.path.exists(csv_path):
+        return []
+    
+    try:
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            next(reader, None)  # Skip header row
+            first_col_values = [row[0].strip() for row in reader if row]  # Get first column
+            return first_col_values
+    except Exception as e:
+        print(f"Error reading CSV data from {csv_filename}: {e}")
+        return []

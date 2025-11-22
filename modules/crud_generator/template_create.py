@@ -79,8 +79,8 @@ def _generate_suite_setup(all_keywords):
     kw = find_keyword(all_keywords, 'Login System')
     if kw:
         steps.append(create_step(kw['name'], {
-            'headeruser': '${USER_ADMIN}',
-            'headerpassword': '${PASSWORD_ADMIN}'
+            'username': '${USER_ADMIN}',
+            'password': '${PASSWORD_ADMIN}'
         }))
     
     # 3. Navigate to menu
