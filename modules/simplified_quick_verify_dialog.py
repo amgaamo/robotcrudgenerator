@@ -1,8 +1,3 @@
-"""
-Quick Verify Detail Dialog Module
-Similar to Quick Fill Form but for verification steps
-"""
-
 import streamlit as st
 from typing import Dict, List, Set
 import re
@@ -203,7 +198,7 @@ def render_kw_factory_verify_detail_dialog():
     # Display selected fields
     if selected_fields:
         
-        # --- START: เพิ่มช่องค้นหาสำหรับ Selected Fields ---
+        # --- Search Selected Fields ---
         search_selected_key = f"{dialog_key}_search_selected"
         search_query_selected = st.text_input(
             f"🔎 Search Selected Fields ({len(selected_fields)} total)",
@@ -218,27 +213,52 @@ def render_kw_factory_verify_detail_dialog():
             ]
         else:
             fields_to_display = selected_fields
-        # --- END: เพิ่มช่องค้นหา ---
 
-        col_title, col_add = st.columns([3, 1])
-        # with col_title:
-        #     st.markdown(f"**📋 Selected:** {len(fields_to_display)} fields")
-        with col_add:
-            if st.button("➕ Add More", key=f"{dialog_key}_add_btn", use_container_width=True):
-                st.session_state[f"{dialog_key}_show_add_field"] = True
-                st.rerun()
+        # --- ACTIONS ROW (Add & Clear) ---
+        col_info, col_actions = st.columns([1.5, 2.5])
+        
+        with col_info:
+             st.caption(f"Showing {len(fields_to_display)} of {len(selected_fields)}")
+
+        with col_actions:
+            # Split actions into smaller columns
+            ac_clear, ac_add = st.columns([1.2, 1])
+            
+            with ac_clear:
+                # Logic for Clear Button
+                if search_query_selected:
+                    # If searching -> Button removes filtered items
+                    if st.button(f"🗑️ Remove Filtered ({len(fields_to_display)})", key=f"{dialog_key}_rm_filtered", use_container_width=True, type="secondary"):
+                        # Keep only fields NOT in display
+                        remaining = [f for f in selected_fields if f not in fields_to_display]
+                        st.session_state[selected_fields_key] = remaining
+                        
+                        # Cleanup configs
+                        for removed_field in fields_to_display:
+                            if removed_field in st.session_state[configs_key]:
+                                del st.session_state[configs_key][removed_field]
+                        st.rerun()
+                else:
+                    # If not searching -> Button clears ALL
+                    if st.button("🗑️ Clear All", key=f"{dialog_key}_clear_all", use_container_width=True, type="secondary"):
+                        st.session_state[selected_fields_key] = []
+                        st.session_state[configs_key] = {}
+                        st.rerun()
+
+            with ac_add:
+                if st.button("➕ Add More", key=f"{dialog_key}_add_btn", use_container_width=True):
+                    st.session_state[f"{dialog_key}_show_add_field"] = True
+                    st.rerun()
         
         # Compact field chips (3 per row with inline X button)
         num_cols = 3
 
-        # --- แก้ไข: ใช้ fields_to_display ---
         for i in range(0, len(fields_to_display), num_cols):
             cols = st.columns(num_cols)
             for j in range(num_cols):
                 idx = i + j
                 if idx < len(fields_to_display):
                     field_name = fields_to_display[idx]
-        # --- สิ้นสุดการแก้ไข ---
                     clean_name = get_clean_locator_name(field_name)
                     
                     with cols[j]:
@@ -700,7 +720,8 @@ def cleanup_dialog_state(dialog_key: str):
         
         # --- START: ADDED (Cleanup for new Add Fields UI) ---
         f"{dialog_key}_clear_flag",
-        f"{dialog_key}_search_fields"
+        f"{dialog_key}_search_fields",
+        f"{dialog_key}_search_selected"
         # --- END: ADDED ---
     ]
     

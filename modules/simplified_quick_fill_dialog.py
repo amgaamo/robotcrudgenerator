@@ -164,7 +164,7 @@ def render_kw_factory_fill_form_dialog():
         auto_selected = auto_select_form_fields(page_locators)
         st.session_state[selected_fields_key] = auto_selected
 
-        st.session_state[configs_key] = {} # <-- [FIX] เพิ่มบรรทัดนี้เพื่อเคลียร์ Configs เก่า
+        st.session_state[configs_key] = {} # Clear old configs
 
         for loc_name in auto_selected:
             if loc_name not in st.session_state[configs_key]:
@@ -193,7 +193,7 @@ def render_kw_factory_fill_form_dialog():
     # Display selected fields
     if selected_fields:
         
-        # --- START: เพิ่มช่องค้นหาสำหรับ Selected Fields ---
+        # --- Search Selected Fields ---
         search_selected_key = f"{dialog_key}_search_selected"
         search_query_selected = st.text_input(
             f"🔎 Search Selected Fields ({len(selected_fields)} total)",
@@ -208,27 +208,52 @@ def render_kw_factory_fill_form_dialog():
             ]
         else:
             fields_to_display = selected_fields
-        # --- END: เพิ่มช่องค้นหา ---
 
-        col_title, col_add = st.columns([3, 1])
-        # with col_title:
-        #     st.markdown(f"**📋 Selected:** {len(fields_to_display)} fields")
-        with col_add:
-            if st.button("➕ Add More", key=f"{dialog_key}_add_btn", use_container_width=True):
-                st.session_state[f"{dialog_key}_show_add_field"] = True
-                st.rerun()
+        # --- ACTIONS ROW (Add & Clear) ---
+        col_info, col_actions = st.columns([1.5, 2.5])
+        
+        with col_info:
+             st.caption(f"Showing {len(fields_to_display)} of {len(selected_fields)}")
+
+        with col_actions:
+            # Split actions into smaller columns
+            ac_clear, ac_add = st.columns([1.2, 1])
+            
+            with ac_clear:
+                # Logic for Clear Button
+                if search_query_selected:
+                    # If searching -> Button removes filtered items
+                    if st.button(f"🗑️ Remove Filtered ({len(fields_to_display)})", key=f"{dialog_key}_rm_filtered", use_container_width=True, type="secondary"):
+                        # Keep only fields NOT in display
+                        remaining = [f for f in selected_fields if f not in fields_to_display]
+                        st.session_state[selected_fields_key] = remaining
+                        
+                        # Cleanup configs
+                        for removed_field in fields_to_display:
+                            if removed_field in st.session_state[configs_key]:
+                                del st.session_state[configs_key][removed_field]
+                        st.rerun()
+                else:
+                    # If not searching -> Button clears ALL
+                    if st.button("🗑️ Clear All", key=f"{dialog_key}_clear_all", use_container_width=True, type="secondary"):
+                        st.session_state[selected_fields_key] = []
+                        st.session_state[configs_key] = {}
+                        st.rerun()
+
+            with ac_add:
+                if st.button("➕ Add More", key=f"{dialog_key}_add_btn", use_container_width=True):
+                    st.session_state[f"{dialog_key}_show_add_field"] = True
+                    st.rerun()
         
         # Compact field chips (3 per row with inline X button)
         num_cols = 3
         
-        # --- แก้ไข: ใช้ fields_to_display ---
         for i in range(0, len(fields_to_display), num_cols):
             cols = st.columns(num_cols)
             for j in range(num_cols):
                 idx = i + j
                 if idx < len(fields_to_display):
                     field_name = fields_to_display[idx]
-        # --- สิ้นสุดการแก้ไข ---
                     clean_name = get_clean_locator_name(field_name)
                     
                     with cols[j]:
@@ -241,7 +266,6 @@ def render_kw_factory_fill_form_dialog():
                                 unsafe_allow_html=True
                             )
                         with subcol2:
-                            # --- แก้ไข: ใช้ field_name ใน key เพื่อให้ลบได้ถูกต้อง ---
                             if st.button("❌", key=f"{dialog_key}_rm_{field_name}", help=f"Remove {clean_name}"):
                                 st.session_state[selected_fields_key].remove(field_name)
                                 if field_name in st.session_state[configs_key]:
@@ -363,17 +387,6 @@ def render_kw_factory_fill_form_dialog():
                 st.session_state[ant_design_key] = new_ant_val
                 st.rerun()
         
-        # Compact Table Header with is_select column
-        # Columns: Field(2), is_sel(0.5), Sel Attr(0.8), Checkbox(0.5), Switch(0.5), SwitchVal(1), Del(0.4)
-        # header_cols = st.columns([2, 0.5, 0.8, 0.5, 0.5, 1, 0.4])
-        # with header_cols[0]: st.caption("**Field**")
-        # with header_cols[1]: st.caption("**select?**")
-        # with header_cols[2]: st.caption("**Sel Attr**")
-        # with header_cols[3]: st.caption("**☑️ Checkbox?**")
-        # with header_cols[4]: st.caption("**🔘 switch?**")
-        # with header_cols[5]: st.caption("**Locator Switch Checked**")
-        # with header_cols[6]: st.caption("**Del**")
-
         st.markdown("""
             <style>
             .header-row {
@@ -646,7 +659,12 @@ def cleanup_dialog_state(dialog_key: str):
         f"{dialog_key}_selected_fields",
         f"{dialog_key}_ant_design",
         f"{dialog_key}_configs",
-        f"{dialog_key}_show_add_field"
+        f"{dialog_key}_show_add_field",
+        
+        # Cleanup search keys too
+        f"{dialog_key}_clear_flag",
+        f"{dialog_key}_search_fields",
+        f"{dialog_key}_search_selected"
     ]
     
     for key in keys_to_remove:

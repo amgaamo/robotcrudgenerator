@@ -20,6 +20,7 @@ from .utils import scan_steps_for_variables, generate_arg_name_from_locator, for
 from .utils import FILL_FORM_DEFAULTS, VERIFY_FORM_DEFAULTS
 from .simplified_quick_fill_dialog import render_kw_factory_fill_form_dialog as render_simplified_fill
 from .simplified_quick_verify_dialog import render_kw_factory_verify_detail_dialog as render_simplified_verify
+from .ui_reorder_component import render_sortable_arguments, render_sortable_steps
 
 # ======= ENTRY POINT FUNCTION =======
 def render_keyword_factory_tab():
@@ -257,105 +258,53 @@ def render_keyword_editor_view(ws):
 
             st.markdown("---") # เส้นคั่น
 
-            # ***** Argument Manager UI *****
-            st.markdown("**🧩 Keyword Arguments (Auto-Detected)**")
-            st.caption("Select variables found in steps to make them arguments.")
-
+            # ***** Argument Manager UI with Drag & Drop *****
             steps = kw.get('steps', [])
-
-            # 1. สแกนหาตัวแปร
             detected_vars = scan_steps_for_variables(steps)
-
-            # 2. จัดการ State สำหรับ Arguments ที่เลือก (List of Dicts)
+            
+            # Initialize args
             if 'args' not in kw or not isinstance(kw['args'], list):
                 kw['args'] = []
-
-            # อ่าน List of Dicts ปัจจุบัน (ลำดับมีความสำคัญ)
+            
             current_ordered_args = kw.get('args', [])
             selected_arg_names = {arg['name'] for arg in current_ordered_args}
-
-            if not detected_vars and not kw['args']:
-                st.caption("No potential arguments detected in steps yet.")
-            else:
-                 # --- แก้ไข Header Columns ---
-                header_cols = st.columns([1, 4, 3, 1.5]) # ปรับความกว้างคอลัมน์ 4 สำหรับ Order
-                with header_cols[0]: st.markdown("**Use**")
-                with header_cols[1]: st.markdown("**Variable**")
-                with header_cols[2]: st.markdown("**Default Value**")
-                with header_cols[3]: st.markdown("**Order**")
-
-                # --- แสดงตัวแปรที่ *ไม่ได้* ถูกเลือกก่อน (ไม่มีปุ่ม Order) ---
-                detected_but_not_selected = sorted([
-                    var_name for var_name in detected_vars
-                    if var_name not in selected_arg_names
-                ])
-
-                if detected_but_not_selected:
-                    st.caption("_Variables detected in steps but not used as arguments:_")
-                    for var_name in detected_but_not_selected:
-                        row_cols = st.columns([1, 4, 3, 1.5])
-                        with row_cols[0]:
-                            new_selection = st.checkbox(" ", value=False, key=f"arg_select_{keyword_id}_{var_name}", label_visibility="collapsed")
-                        with row_cols[1]:
-                            st.code(var_name, language='robotframework')
-                        # คอลัมน์ Default และ Order ว่างเปล่า
-                        if new_selection: # ถ้าผู้ใช้เพิ่งติ๊กเลือก
-                            # เพิ่มเข้า List (จะถูกเรียงใหม่รอบหน้า)
+            
+            # Section 1: Unused Variables
+            detected_but_not_selected = sorted([
+                var_name for var_name in detected_vars
+                if var_name not in selected_arg_names
+            ])
+            
+            if detected_but_not_selected:
+                with st.expander(f"➕ **Add Arguments** ({len(detected_but_not_selected)} unused variables)", 
+                                expanded=len(current_ordered_args) == 0):
+                    st.caption("Select variables to use as keyword arguments:")
+                    
+                    # Select all button
+                    if st.button("✅ Select All Unused", use_container_width=True, 
+                                key=f"select_all_args_{keyword_id}"):
+                        for var_name in detected_but_not_selected:
                             current_ordered_args.append({'name': var_name, 'default': ''})
-                            kw['args'] = current_ordered_args # อัปเดต state หลักทันที
-                            st.rerun() # Rerun ทันที
-
-                    st.markdown("---") # คั่นระหว่างกลุ่ม
-
-                # --- วนลูปสร้าง UI สำหรับ Arguments ที่ถูกเลือก *ตามลำดับปัจจุบัน* ---
-                if current_ordered_args: # แสดงเฉพาะถ้ามี args ที่เลือกแล้ว
-                    st.caption("_Selected keyword arguments (order matters):_")
-                num_selected_args = len(current_ordered_args)
-                temp_new_args_list = [] # เก็บค่า default ที่อาจมีการแก้ไข
-
-                for idx, arg_config in enumerate(current_ordered_args):
-                    var_name = arg_config['name']
-                    row_cols = st.columns([1, 4, 3, 1.5])
-
-                    with row_cols[0]:
-                        is_selected = True
-                        new_selection = st.checkbox(" ", value=is_selected, key=f"arg_select_{keyword_id}_{var_name}", label_visibility="collapsed")
-                    with row_cols[1]:
-                        st.code(var_name, language='robotframework')
-                    with row_cols[2]:
-                        default_val = st.text_input("Default",
-                                                    value=arg_config.get('default', ''),
-                                                    key=f"arg_default_{keyword_id}_{var_name}",
-                                                    label_visibility="collapsed",
-                                                    placeholder="Optional (e.g., ${EMPTY})")
-                        temp_new_args_list.append({'name': var_name, 'default': default_val})
-                    with row_cols[3]:
-                        btn_cols = st.columns([1, 1])
-                        with btn_cols[0]:
-                            up_disabled = (idx == 0)
-                            if st.button("⬆️", key=f"arg_up_{keyword_id}_{var_name}", disabled=up_disabled, use_container_width=True, help="Move Up"):
-                                current_ordered_args.insert(idx - 1, current_ordered_args.pop(idx))
+                        kw['args'] = current_ordered_args
+                        st.rerun()
+                    
+                    st.markdown("---")
+                    
+                    # List unused variables with add buttons
+                    for var_name in detected_but_not_selected:
+                        col_add, col_name = st.columns([0.8, 4])
+                        with col_add:
+                            if st.button("➕", key=f"add_arg_{keyword_id}_{var_name}", 
+                                       help="Add as argument", use_container_width=True):
+                                current_ordered_args.append({'name': var_name, 'default': ''})
                                 kw['args'] = current_ordered_args
                                 st.rerun()
-                        with btn_cols[1]:
-                            down_disabled = (idx == num_selected_args - 1)
-                            if st.button("⬇️", key=f"arg_down_{keyword_id}_{var_name}", disabled=down_disabled, use_container_width=True, help="Move Down"):
-                                current_ordered_args.insert(idx + 1, current_ordered_args.pop(idx))
-                                kw['args'] = current_ordered_args
-                                st.rerun()
-
-                # --- อัปเดต kw['args'] หลัง Loop (จัดการ Default Value และ bỏ tick) ---
-                final_args_list = []
-                temp_defaults = {item['name']: item['default'] for item in temp_new_args_list}
-
-                for arg_config in current_ordered_args:
-                    var_name = arg_config['name']
-                    if st.session_state.get(f"arg_select_{keyword_id}_{var_name}", False):
-                        arg_config['default'] = temp_defaults.get(var_name, '')
-                        final_args_list.append(arg_config)
-
-                if kw.get('args', []) != final_args_list:
-                    kw['args'] = final_args_list
+                        with col_name:
+                            st.code(var_name, language='robotframework')
+            
+            # Section 2: Sortable Arguments
+            render_sortable_arguments(keyword_id, kw)
+            
             # ***** End Argument Manager UI *****
 
             st.markdown("---") # เส้นคั่น
@@ -379,23 +328,33 @@ def render_keyword_editor_view(ws):
 
         # --- 3. Step Editor ---
         st.markdown("---") # เพิ่มเส้นคั่น
-        st.markdown("#### 👣 Keyword Steps")
+        
+        # Toggle for drag & drop mode
+        col_title, col_toggle = st.columns([3, 1])
+        with col_title:
+            st.markdown("#### 👣 Keyword Steps")
+        with col_toggle:
+            use_drag_drop = st.toggle("🎯 Drag", key=f"drag_mode_{keyword_id}", 
+                                     help="Enable drag & drop reordering")
+        
         steps = kw.get('steps', [])
-        indent_level = 0 # Track indent level for IF/END display
 
         if not steps:
             st.info("No steps yet. Click 'Add Step' below.")
         else:
-            # Use specific step card renderer for keyword factory
-            for i, step in enumerate(steps):
-                # Pass indent_level to the renderer
-                render_step_card_compact_for_kw(step, i, keyword_id, steps, indent_level)
-
-                # Update indent level for the next step
-                if step.get('keyword') == 'IF Condition':
-                    indent_level += 1
-                elif step.get('keyword') == 'END':
-                    indent_level = max(0, indent_level - 1)
+            if use_drag_drop:
+                # Drag & Drop Mode
+                render_sortable_steps(keyword_id, kw)
+            else:
+                # Normal Mode (existing code)
+                indent_level = 0
+                for i, step in enumerate(steps):
+                    render_step_card_compact_for_kw(step, i, keyword_id, steps, indent_level)
+                    
+                    if step.get('keyword') == 'IF Condition':
+                        indent_level += 1
+                    elif step.get('keyword') == 'END':
+                        indent_level = max(0, indent_level - 1)
 
         st.markdown("---")
         col1, col2 = st.columns(2)
