@@ -133,11 +133,20 @@ def add_step(section_key, new_step_data):
 def add_fill_form_step(section_key):
     ws = _get_workspace()
     new_step = {
-        "id": str(uuid.uuid4()), "keyword": "Fill in data form",
+        "id": str(uuid.uuid4()), 
+        "keyword": "Fill in data form",
         "args": {
-            "locator_field": "", "value": "", "select_attribute": "label",
-            "is_checkbox_type": False, "is_ant_design": False,
-            "is_switch_type": False, "locator_switch_checked": ""
+            # ✅ ต้องใช้ชื่อนี้ เพราะใน commonkeywords ประกาศรับ ${locator_field}
+            "locator_field": "",      
+            
+            # ✅ ต้องใช้ชื่อนี้ เพราะใน commonkeywords ประกาศรับ ${value}
+            "value": "",              
+            
+            "select_attribute": "label",
+            "is_checkbox_type": False, 
+            "is_ant_design": False,
+            "is_switch_type": False, 
+            "locator_switch_checked": ""
         }
     }
     ws['steps'][section_key].insert(0, new_step)
@@ -285,25 +294,96 @@ def auto_detect_and_generate_form_steps(add_to_section):
     return steps_added
 
 # ===================================================================
-# ===== 4. LOGIC สำหรับสร้าง SCRIPT (REFACTORED) =====
+# ===== ส่วนที่แก้ไข: Logic การแปลง Argument ให้ตรงกับ Common Keywords =====
 # ===================================================================
+
+def _resolve_arg_name(keyword_name, internal_name, default_name):
+    """
+    ฟังก์ชันช่วยค้นหาชื่อ Argument จริงจาก Definition ของ Keyword
+    """
+    # 1. ดึงข้อมูล Keywords ทั้งหมดที่มีในระบบ (Common + Factory)
+    ws_studio = st.session_state.get('studio_workspace', {})
+    common_kws = ws_studio.get('keywords', [])
+    factory_kws = get_keyword_factory_keywords()
+    all_kws = common_kws + factory_kws
+
+    # 2. หา Definition ของ Keyword ที่กำลังใช้งาน
+    target_kw = next((k for k in all_kws if k['name'] == keyword_name), None)
+    
+    if not target_kw:
+        return default_name
+
+    # 3. สร้างรายการ Argument ที่ Keyword นั้นรับ (ตัด ${} ออก)
+    defined_args = []
+    if target_kw.get('args'):
+        for arg in target_kw['args']:
+            name = arg.get('name', '')
+            # Clean syntax ${arg} -> arg
+            clean = name.replace('${', '').replace('}', '').replace('@{', '').replace('&{', '')
+            defined_args.append(clean.lower())
+
+    # 4. Logic การ Map ชื่อ (Heuristic Mapping)
+    # ถ้าชื่อ Internal ตรงกับ Defined เป๊ะๆ ให้ใช้เลย
+    if internal_name.lower() in defined_args:
+        # คืนค่าชื่อเดิมแต่ Case อาจจะตาม Definition ก็ได้ (ในที่นี้คืนค่า internal ไปก่อน)
+        return internal_name
+
+    # Mapping สำหรับ locator_field
+    if internal_name == 'locator_field':
+        for candidate in ['locator', 'element', 'field', 'target']:
+            if candidate in defined_args: return candidate
+    
+    # Mapping สำหรับ value
+    if internal_name == 'value':
+        for candidate in ['text', 'data', 'input']:
+            if candidate in defined_args: return candidate
+            
+    # Mapping สำหรับ expected_value
+    if internal_name == 'expected_value':
+        for candidate in ['expected', 'expect', 'value']:
+            if candidate in defined_args: return candidate
+
+    # Mapping สำหรับ select_attribute
+    if internal_name == 'select_attribute':
+        for candidate in ['attribute', 'attr', 'by']:
+            if candidate in defined_args: return candidate
+            
+    # Mapping สำหรับ Table Verify
+    if internal_name == 'locator_thead':
+        for candidate in ['header', 'table_header', 'headers']:
+             if candidate in defined_args: return candidate
+    if internal_name == 'locator_tbody':
+        for candidate in ['body', 'table_body', 'rows']:
+             if candidate in defined_args: return candidate
+
+    # ถ้าหาไม่เจอ ให้ใช้ค่า Default เดิม
+    return default_name
 
 def _format_arguments_for_script(keyword, args):
     """
     ฟังก์ชัน Helper ใหม่: แปลง dict ของ arguments เป็น list ของ string ที่พร้อมใช้งาน
-    (REVISED: Added logic for 'Verify Result of data table')
+    (REVISED: Supports Dynamic Argument Naming lookup)
     """
     args_list = []
     
     # --- Logic พิเศษสำหรับ 'Fill in data form' ---
     if keyword == 'Fill in data form':
         locator_obj = args.get('locator_field')
+        
+        # Resolve names dynamically
+        arg_locator = _resolve_arg_name(keyword, 'locator_field', 'locator_field')
+        arg_value = _resolve_arg_name(keyword, 'value', 'value')
+        arg_sel_attr = _resolve_arg_name(keyword, 'select_attribute', 'select_attribute')
+        
         if isinstance(locator_obj, dict) and locator_obj.get('name'):
-            args_list.append(f"locator_field=${{{get_clean_locator_name(locator_obj['name'])}}}")
+            args_list.append(f"{arg_locator}=${{{get_clean_locator_name(locator_obj['name'])}}}")
+            
         if not args.get('is_switch_type'):
             value = args.get('value', '')
-            args_list.append(f"value={value or '${EMPTY}'}")
-        args_list.append(f"select_attribute={args.get('select_attribute', 'label')}")
+            args_list.append(f"{arg_value}={value or '${EMPTY}'}")
+            
+        args_list.append(f"{arg_sel_attr}={args.get('select_attribute', 'label')}")
+        
         if args.get('is_checkbox_type'): args_list.append("is_checkbox_type=${True}")
         if args.get('is_ant_design'): args_list.append("is_ant_design=${True}")
         if args.get('is_switch_type'):
@@ -313,94 +393,94 @@ def _format_arguments_for_script(keyword, args):
                 args_list.append(f"locator_switch_checked=${{{get_clean_locator_name(switch_loc_obj['name'])}}}")
         return args_list
 
-    # --- ✅✅✅ START: NEW LOGIC for 'Verify Result of data table' ---
+    # --- Logic สำหรับ 'Verify Result of data table' ---
     if keyword == 'Verify Result of data table':
+        # Resolve names
+        arg_th = _resolve_arg_name(keyword, 'locator_thead', 'locator_thead')
+        arg_tb = _resolve_arg_name(keyword, 'locator_tbody', 'locator_tbody')
+        arg_row = _resolve_arg_name(keyword, 'rowdata', 'rowdata')
+        
         # 1. Handle fixed args
-        if args.get('theader'): args_list.append(f"theader=${{{args['theader']}}}")
-        if args.get('tbody'): args_list.append(f"tbody=${{{args['tbody']}}}")
-        if args.get('rowdata'): args_list.append(f"rowdata={args['rowdata']}")
-        if args.get('ignore_case'): args_list.append(f"ignore_case={args['ignore_case']}")
+        if args.get('locator_thead'): args_list.append(f"{arg_th}=${{{args['locator_thead']}}}")
+        if args.get('locator_tbody'): args_list.append(f"{arg_tb}=${{{args['locator_tbody']}}}")
+        if args.get('rowdata'): args_list.append(f"{arg_row}={args['rowdata']}")
+        if args.get('ignore_case'): args_list.append(f"ignore_case={args['ignore_case']}") # Robot naming usually standard
         
         # 2. Handle dynamic 'assertion_columns'
-        #    แปลงจาก: [{'header_name': 'H1', 'expected_value': 'V1'}, ...]
-        #    ไปเป็น:  [ 'col.H1=H1', 'assert.H1=equal', 'expected.H1=V1', ... ]
         assertion_columns = args.get('assertion_columns', [])
         for assertion in assertion_columns:
             header = assertion.get('header_name')
             expected = assertion.get('expected_value')
             if header:
-                # เราจะ hardcode 'equal' Tensei
                 args_list.append(f"col.{header}={header}")
                 args_list.append(f"assert.{header}=equal")
                 args_list.append(f"expected.{header}={expected or '${EMPTY}'}")
         return args_list
-    # --- ✅✅✅ END: NEW LOGIC ---
 
-    # --- ✅✅✅ START: NEW LOGIC for 'Verify data form' ---
+    # --- Logic สำหรับ 'Verify data form' ---
     if keyword == 'Verify data form':
         locator_obj = args.get('locator_field')
+        
+        # Resolve names
+        arg_locator = _resolve_arg_name(keyword, 'locator_field', 'locator_field')
+        arg_expected = _resolve_arg_name(keyword, 'expected_value', 'expected_value')
+        arg_sel_attr = _resolve_arg_name(keyword, 'select_attribute', 'select_attribute')
+
         if isinstance(locator_obj, dict) and locator_obj.get('name'):
-            args_list.append(f"locator_field=${{{get_clean_locator_name(locator_obj['name'])}}}")
+            args_list.append(f"{arg_locator}=${{{get_clean_locator_name(locator_obj['name'])}}}")
         
         expected_val = args.get('expected_value', '')
-        args_list.append(f"expected_value={expected_val or '${EMPTY}'}")
+        args_list.append(f"{arg_expected}={expected_val or '${EMPTY}'}")
         
         if args.get('select_attribute'):
-            args_list.append(f"select_attribute={args.get('select_attribute')}")
+            args_list.append(f"{arg_sel_attr}={args.get('select_attribute')}")
         return args_list
-    # --- ✅✅✅ END: NEW LOGIC ---
 
-    # --- ✅✅✅ START: Logic สำหรับ Keyword Factory keywords ---
-    # Check if this is a keyword from Keyword Factory
+    # --- Logic สำหรับ Keyword Factory keywords ---
     factory_keywords = get_keyword_factory_keywords()
     is_factory_keyword = any(kw['name'] == keyword for kw in factory_keywords)
     
     if is_factory_keyword:
-        # For Keyword Factory keywords, format arguments based on their definition
         factory_kw = next((kw for kw in factory_keywords if kw['name'] == keyword), None)
         if factory_kw:
             for arg_def in factory_kw.get('args', []):
                 arg_name = arg_def.get('name', '')
-                if arg_name in args:
-                    value = args[arg_name]
+                # ลบ ${} ออกเพื่อใช้เป็น key ในการดึงค่าจาก args dict
+                clean_name = arg_name.replace('${', '').replace('}', '')
+                
+                if clean_name in args:
+                    value = args[clean_name]
+                    # Handle value formatting
+                    if str(value).strip() == "": formatted_value = "${EMPTY}"
+                    elif str(value).startswith('${'): formatted_value = value
+                    else: formatted_value = value
                     
-                    # Handle empty values
-                    if str(value).strip() == "":
-                        formatted_value = "${EMPTY}"
-                    # Handle variable syntax
-                    elif str(value).startswith('${'):
-                        formatted_value = value
-                    # Handle plain text
-                    else:
-                        formatted_value = value
-                    
-                    args_list.append(f"{arg_name}={formatted_value}")
-            return args_list
-    # --- ✅✅✅ END: Logic สำหรับ Keyword Factory keywords ---
+                    args_list.append(f"{formatted_value}") 
 
-    # --- Logic ทั่วไปสำหรับ Keywords อื่นๆ ---
+            return args_list
+
+    # --- Logic ทั่วไปสำหรับ Keywords อื่นๆ (Generic Fallback) ---
     for name, value in args.items():
-        if value or value is False or value == "": # (ปรับให้รองรับค่าว่าง)
+        if value or value is False or value == "":
             
-            # 1. จัดการ Locator ที่เป็น Object (จาก auto_detect)
+            # 1. จัดการ Locator ที่เป็น Object
             if isinstance(value, dict) and value.get('name'):
                 formatted_value = f"${{{get_clean_locator_name(value['name'])}}}"
-            
             # 2. จัดการค่าว่าง
             elif str(value).strip() == "":
                 formatted_value = "${EMPTY}"
-            
             # 3. จัดการค่าตัวแปร
             elif str(value).startswith('${'):
                 formatted_value = value
-                
-            # 4. จัดการค่าปกติ (Plain text)
+            # 4. จัดการค่าปกติ
             else:
-                # ตรวจสอบว่า arg name คล้าย locator หรือไม่
-                is_loc_arg = any(s in name.lower() for s in ['locator', 'menu', 'name', 'header', 'body'])
+                keywords_check = ['locator', 'menu', 'header', 'body']
+                is_loc_arg = any(s in name.lower() for s in keywords_check)
+                if name in ['button_name', 'timeout','pagename']: is_loc_arg = False
                 formatted_value = f"${{{value}}}" if is_loc_arg else value
             
             args_list.append(f"{name}={formatted_value}")
+            
     return args_list
 
 def _format_step_for_script(step, indent=4):
@@ -460,13 +540,33 @@ def generate_robot_script():
                     lines.append(f"{prefix}    ...    {line}")
         return "\n".join(lines)
 
+    # 1. สร้าง String ของแต่ละส่วนออกมาก่อน
+    suite_setup_str = _format_run_keywords("Suite Setup", ws['steps']['suite_setup'])
+    test_setup_str = _format_run_keywords("Test Setup", ws['steps']['test_setup'])
+    test_teardown_str = _format_run_keywords("Test Teardown", ws['steps']['test_teardown'])
+    suite_teardown_str = _format_run_keywords("Suite Teardown", ws['steps']['suite_teardown'])
+
+    # 2. ถ้ามี Suite Teardown ให้เพิ่มบรรทัดว่างนำหน้า (\n)
+    if suite_teardown_str:
+        suite_teardown_str = "\n" + suite_teardown_str
+
+    if test_setup_str:
+        test_setup_str = "\n" + test_setup_str
+
+    if test_teardown_str:
+        test_teardown_str = "\n" + test_teardown_str
+
+    if suite_setup_str:
+        suite_setup_str = "\n" + suite_setup_str
+
+    # 3. รวมเข้า List
     settings_lines = [
         "*** Settings ***",
         "Resource    ../../resources/commonkeywords.resource",
-        _format_run_keywords("Suite Setup", ws['steps']['suite_setup']),
-        _format_run_keywords("Test Setup", ws['steps']['test_setup']),
-        _format_run_keywords("Test Teardown", ws['steps']['test_teardown']),
-        _format_run_keywords("Suite Teardown", ws['steps']['suite_teardown'])
+        suite_setup_str,
+        test_setup_str,
+        test_teardown_str,
+        suite_teardown_str # ตัวแปรนี้ถูกเพิ่ม \n ไว้แล้วถ้ามีข้อมูล
     ]
     
     # --- (แก้ไขส่วนนี้ - DEFENSIVE VERSION) ---

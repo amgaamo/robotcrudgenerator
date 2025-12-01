@@ -87,8 +87,8 @@ def _generate_suite_setup(all_keywords):
     kw = find_keyword(all_keywords, 'Go to SUBMENU name')
     if kw:
         steps.append(create_step(kw['name'], {
-            'menuname': 'MENU_NAME',
-            'submenuname': 'SUB_MENU_NAME'
+            'main_menu': 'MENU_NAME',
+            'submenu': 'SUB_MENU_NAME'
         }))
     
     # 4. Verify page name
@@ -109,7 +109,7 @@ def _generate_action_list_create(all_keywords, all_locators):
     if kw:
         loc = find_locator(all_locators, ['NEW', 'ADD', 'CREATE_BTN'])
         steps.append(create_step(kw['name'], {
-            'locator': loc['name'] if loc else 'LOCATOR_CREATE_BTN'
+            'locator_field': loc['name'] if loc else 'LOCATOR_CREATE_BTN'
         }))
     
     return steps
@@ -126,7 +126,7 @@ def _generate_action_detail_create(all_keywords, all_locators, ws):
     if kw_click:
         loc_save = find_locator(all_locators, ['SAVE', 'SUBMIT', 'CONFIRM'])
         steps.append(create_step(kw_click['name'], {
-            'locator': loc_save['name'] if loc_save else 'LOCATOR_SAVE_BTN'
+            'locator_field': loc_save['name'] if loc_save else 'LOCATOR_SAVE_BTN'
         }))
     
     # 2. Click Modal OK
@@ -163,7 +163,7 @@ def _generate_verify_list_create(all_keywords, all_locators, ws):
         # (MODIFIED) Append to 'search' list
         steps['search'].append(create_step(kw_search['name'], {
             'locator_field': loc_search if loc_search else {'name': 'LOCATOR_SEARCH_INPUT'},
-            'value': search_value
+            'keyword': search_value
         }))
     
     # 2. Click Search button
@@ -172,11 +172,11 @@ def _generate_verify_list_create(all_keywords, all_locators, ws):
         loc_search_btn = find_locator(all_locators, ['SEARCH_BTN', 'SEARCH_BUTTON'])
         # (MODIFIED) Append to 'search' list
         steps['search'].append(create_step(kw_click['name'], {
-            'locator': loc_search_btn['name'] if loc_search_btn else 'LOCATOR_SEARCH_BTN'
+            'locator_field': loc_search_btn['name'] if loc_search_btn else 'LOCATOR_SEARCH_BTN'
         }))
     
     # 3. Wait Loading Progress (Added in step 3.1)
-    kw_wait = find_keyword(all_keywords, 'Wait Loading Progress')
+    kw_wait = find_keyword(all_keywords, 'Wait Loading progress')
     if kw_wait:
         # (MODIFIED) Append to 'search' list
         steps['search'].append(create_step(kw_wait['name'], {}))
@@ -186,10 +186,10 @@ def _generate_verify_list_create(all_keywords, all_locators, ws):
     if kw_verify_table:
         # (MODIFIED) Append to 'table' list
         steps['table'].append(create_step(kw_verify_table['name'], {
-            'theader': 'LOCATOR_TABLE_HEADER',
-            'tbody': 'LOCATOR_TABLE_BODY',
+            'locator_thead': 'LOCATOR_TABLE_HEADER',
+            'locator_tbody': 'LOCATOR_TABLE_BODY',
             'rowdata': '1',
-            'ignore_case': '${True}',
+            'ignorcase': 'True',
             'assertion_columns': []
         }))
     
@@ -221,7 +221,7 @@ def _generate_verify_detail_create(all_keywords, all_locators, ws):
         loc_back = find_locator(all_locators, ['BACK_BTN', 'BACK_BUTTON'])
         # (MODIFIED) Append to 'back' list
         steps['back'].append(create_step(kw_click['name'], {
-            'locator': loc_back['name'] if loc_back else 'LOCATOR_BACK_BTN'
+            'locator_field': loc_back['name'] if loc_back else 'LOCATOR_BACK_BTN'
         }))
     
     return steps # <-- Return dict

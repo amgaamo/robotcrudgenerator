@@ -521,176 +521,175 @@ def render_add_step_dialog_base(
                 
                 st.markdown("---")
                 
-                # === Main Form - ใช้ Stable Key เท่านั้น ===
+                # === Main Form - แก้ไข: ลบ st.form ออกเพื่อให้ Dropdown ทำงานโต้ตอบกันได้ ===
                 kw_name_safe = selected_kw['name'].replace(' ', '_').replace('/', '_').replace('(', '').replace(')', '')
-                form_key = f"step_form_{dialog_state_key}_{kw_name_safe}"
+                # ลบบรรทัด form_key = ... ออก
                 
-                with st.form(key=form_key):
-                    # 🔴 START: บล็อกโค้ดสำหรับ "วาด" (Render) ที่หายไป 🔴
-                    args_data = {}
-                    form_input_keys = [] # เก็บ Key สำหรับ Cleanup
-                    
+                # ลบ with st.form(key=form_key): ออก (ขยับ code block ด้านล่างกลับมา 1 tab)
+                
+                # 🔴 START: ส่วนที่แก้ไข Indentation และลบ Form 🔴
+                args_data = {}
+                form_input_keys = [] # เก็บ Key สำหรับ Cleanup
+                
+                if selected_kw.get('args'):
+                    for i, arg_item in enumerate(selected_kw.get('args', [])):
+                        arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
+                        raw_arg_name = arg_info.get('name')
+                        if not raw_arg_name:
+                            continue
+
+                        clean_arg_name = raw_arg_name.strip('${}')
+                        arg_info['name'] = clean_arg_name
+
+                        unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
+                        form_input_keys.append(unique_key) # เก็บ Base Key
+
+                        current_value_in_state = st.session_state.get(unique_key)
+                        if current_value_in_state is not None:
+                            arg_info['default'] = current_value_in_state
+
+                        # --- (1) ส่ง selected_kw_name ---
+                        rendered_value = render_argument_input(
+                            arg_info,
+                            ws_state,
+                            unique_key,
+                            current_value=current_value_in_state,
+                            selected_kw_name=selected_kw.get('name') 
+                        )
+
+                st.markdown("---")
+
+                # เปลี่ยนจาก st.form_submit_button เป็น st.button ปกติ
+                submitted_add = st.button(
+                    f"✅ Add Step to Workspace",
+                    key=f"btn_submit_add_{dialog_state_key}", # ต้องเพิ่ม key ไม่ให้ซ้ำ
+                    type="primary",
+                    use_container_width=True
+                )
+
+                if submitted_add:
+                    final_args_data = {}
                     if selected_kw.get('args'):
                         for i, arg_item in enumerate(selected_kw.get('args', [])):
                             arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
                             raw_arg_name = arg_info.get('name')
-                            if not raw_arg_name:
-                                continue
+                            if not raw_arg_name: continue
 
                             clean_arg_name = raw_arg_name.strip('${}')
                             arg_info['name'] = clean_arg_name
-
+                            # Key ต้องเหมือนกับตอน Render เป๊ะๆ
                             unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
-                            form_input_keys.append(unique_key) # เก็บ Base Key
+                            
+                            kw_name_lower = str(selected_kw.get('name', '')).lower()
+                            arg_lower = clean_arg_name.lower()
 
-                            current_value_in_state = st.session_state.get(unique_key)
-                            if current_value_in_state is not None:
-                                arg_info['default'] = current_value_in_state
+                            # ---------------------------------------------------------
+                            # ✅ FINAL SAVE LOGIC (Priority: Menu > Preset > Locator > Pattern > Default)
+                            # ---------------------------------------------------------
+                            final_value = None
 
-                            # --- (1) ส่ง selected_kw_name ---
-                            rendered_value = render_argument_input(
-                                arg_info,
-                                ws_state,
-                                unique_key,
-                                current_value=current_value_in_state,
-                                selected_kw_name=selected_kw.get('name') # <-- เพิ่มตรงนี้
-                            )
+                            # 1. Menu Locators (สูงสุด)
+                            if 'go to menu name' in kw_name_lower and clean_arg_name == 'menu_locator':
+                                selected_main = st.session_state.get(f"{unique_key}_main_menu_select", '')
+                                final_value = f"${{mainmenu}}[{selected_main}]" if selected_main else ""
+                            elif 'go to submenu name' in kw_name_lower and clean_arg_name == 'main_menu':
+                                final_value = st.session_state.get(f"{unique_key}_main_menu_select", '')
+                            elif 'go to submenu name' in kw_name_lower and clean_arg_name == 'submenu':
+                                final_value = st.session_state.get(f"{unique_key}_sub_menu_select", '')
+                            # elif clean_arg_name == 'pagename':
+                            #     selected_page_key = st.session_state.get(f"{unique_key}_pagename_select", '')
+                            #     final_value = f"${{menuname}}[{selected_page_key}]" if selected_page_key else ""
 
-                    st.markdown("---")
+                            # 2. PRESETS (เช่น button_name, status)
+                            # ✅ สำคัญ: ต้องเช็ค Preset ก่อน Locator
+                            elif clean_arg_name in ARGUMENT_PRESETS:
+                                config = ARGUMENT_PRESETS[clean_arg_name]
+                                input_type = config.get('type')
+                                if input_type == "select_or_input":
+                                    selected = st.session_state.get(f"{unique_key}_select")
+                                    if selected == "📝 Other (custom)":
+                                        final_value = st.session_state.get(f"{unique_key}_custom")
+                                    else:
+                                        final_value = selected
+                                elif input_type == "boolean":
+                                    final_value = 'true' if st.session_state.get(unique_key, False) else 'false'
+                                else: 
+                                    final_value = st.session_state.get(unique_key)
 
-                    submitted_add = st.form_submit_button(
-                        f"✅ Add Step to Workspace",
-                        type="primary",
-                        use_container_width=True
-                    )
+                            # 3. LOCATOR (เช็คคำว่า button, field ฯลฯ)
+                            elif any(s in arg_lower for s in ['locator', 'field', 'button', 'element', 'header', 'body', 'theader', 'tbody']):
+                                final_value = st.session_state.get(f"{unique_key}_locator_select")
 
-                    if submitted_add:
-                        final_args_data = {}
-                        if selected_kw.get('args'):
-                            for i, arg_item in enumerate(selected_kw.get('args', [])):
-                                arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
-                                raw_arg_name = arg_info.get('name')
-                                if not raw_arg_name: continue
-
-                                clean_arg_name = raw_arg_name.strip('${}')
-                                arg_info['name'] = clean_arg_name
-                                unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
-                                kw_name_lower = str(selected_kw.get('name', '')).lower() # ชื่อ Keyword ที่เลือก
-
-                                # --- (2) START: MODIFIED SMART KEY LOGIC (SAVE V5) ---
-                                final_value = None
-                                is_locator_arg_other = any(s in clean_arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'header', 'body', 'theader', 'tbody'])
-
-                                # 1. ตรวจสอบ Argument/Keyword พิเศษ (Menu Locators)
-                                if 'go to menu name' in kw_name_lower and clean_arg_name == 'menu_locator':
-                                    selected_main = st.session_state.get(f"{unique_key}_main_menu_select", '')
-                                    final_value = f"${{mainmenu}}[{selected_main}]" if selected_main else ""
-
-                                elif 'go to submenu name' in kw_name_lower and clean_arg_name == 'main_menu':
-                                    # ✅ FIX: แปลงเป็น ${mainmenu}[key]
-                                    selected_main_key = st.session_state.get(f"{unique_key}_main_menu_select", '')
-                                    final_value = f"${{mainmenu}}[{selected_main_key}]" if selected_main_key else ""
-
-                                elif 'go to submenu name' in kw_name_lower and clean_arg_name == 'submenu':
-                                    # ✅ FIX: แปลงเป็น ${submenu}[key]
-                                    selected_sub_key = st.session_state.get(f"{unique_key}_sub_menu_select", '')
-                                    final_value = f"${{submenu}}[{selected_sub_key}]" if selected_sub_key else ""
-
-                                elif clean_arg_name == 'pagename':
-                                    # ✅ NEW: เพิ่ม support สำหรับ pagename
-                                    selected_page_key = st.session_state.get(f"{unique_key}_pagename_select", '')
-                                    final_value = f"${{menuname}}[{selected_page_key}]" if selected_page_key else ""
-
-                                # 2. ตรวจสอบ PRESETS
-                                elif clean_arg_name in ARGUMENT_PRESETS:
-                                    config = ARGUMENT_PRESETS[clean_arg_name]
-                                    input_type = config.get('type')
-                                    if input_type == "select_or_input":
-                                        selected = st.session_state.get(f"{unique_key}_select")
-                                        if selected == "📝 Other (custom)":
-                                            final_value = st.session_state.get(f"{unique_key}_custom")
-                                        else:
-                                            final_value = selected
-                                    elif input_type == "boolean":
-                                        final_value = 'true' if st.session_state.get(unique_key, False) else 'false'
-                                    else: # select
+                            # 4. PATTERNS (เช่น timeout, password)
+                            else:
+                                matched_pattern = False
+                                for pattern_key in ARGUMENT_PATTERNS.keys():
+                                    if pattern_key in arg_lower:
+                                        # Pattern ใช้ key หลัก
                                         final_value = st.session_state.get(unique_key)
-
-                                # 3. ตรวจสอบ LOCATOR อื่นๆ
-                                elif is_locator_arg_other:
-                                    final_value = st.session_state.get(f"{unique_key}_locator_select")
-
-                                # 4. ตรวจสอบ PATTERNS
-                                else:
-                                    matched_pattern = False
-                                    arg_lower_pattern = clean_arg_name.lower()
-                                    for pattern_key in ARGUMENT_PATTERNS.keys():
-                                        if pattern_key in arg_lower_pattern:
-                                            final_value = st.session_state.get(unique_key)
-                                            matched_pattern = True
-                                            break
-                                    # 5. Default Text Input
-                                    if not matched_pattern:
-                                        final_value = st.session_state.get(f"{unique_key}_default_text")
-
-                                # Fallback
-                                if final_value is None:
-                                    final_value = st.session_state.get(unique_key, '')
-
-                                final_args_data[clean_arg_name] = final_value
-                                # --- END: MODIFIED SMART KEY LOGIC (SAVE V5) ---
-
-                        # ✅ แก้ไข IndentationError
-                        new_step = {
-                            "id": str(uuid.uuid4()), 
-                            "keyword": selected_kw['name'], 
-                            "args": final_args_data
-                        }
-                        
-                        add_step_callback(context, new_step)
-                        
-                        # Cleanup
-                        st.session_state[dialog_state_key] = False
-                        if selected_kw_state_key in st.session_state: 
-                            del st.session_state[selected_kw_state_key]
-                        
-                        # --- 🐞 FIX: แก้ไข Logic การลบ Key ---
-                        # (ต้องลบ Key ที่มี Suffix ด้วย)
-                        form_input_keys_to_clean_on_submit = []
-                        if selected_kw.get('args'):
-                            for i, arg_item in enumerate(selected_kw.get('args', [])):
-                                clean_arg_name = arg_item.get('name', '').strip('${}')
-                                if not clean_arg_name: continue
+                                        matched_pattern = True
+                                        break
                                 
-                                unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
-                                
-                                # เพิ่ม Key ที่มี Suffix ที่เป็นไปได้ทั้งหมด
-                                form_input_keys_to_clean_on_submit.append(unique_key)
-                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_locator_select")
-                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_main_menu_select")
-                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_sub_menu_select")
-                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_pagename_select")
-                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_select")
-                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_custom")
-                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_default_text")
+                                # 5. DEFAULT
+                                if not matched_pattern:
+                                    # Default ใช้ _default_text
+                                    final_value = st.session_state.get(f"{unique_key}_default_text")
 
-                        for key in form_input_keys_to_clean_on_submit:
-                            if key in st.session_state: 
-                                del st.session_state[key]
-                        # --- END FIX ---
-                        
-                        # ลบค่า CSV Quick Insert
-                        csv_keys = [
-                            f"quick_csv_ds_{dialog_state_key}",
-                            f"quick_csv_row_{dialog_state_key}",
-                            f"quick_csv_col_{dialog_state_key}",
-                            f"quick_csv_target_{dialog_state_key}",
-                        ]
-                        for key in csv_keys:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        
-                        st.rerun()
+                            # Fallback
+                            if final_value is None:
+                                final_value = st.session_state.get(unique_key, '')
+
+                            final_args_data[clean_arg_name] = final_value
+                        # --- END: MODIFIED SMART KEY LOGIC ---
+
+                    new_step = {
+                        "id": str(uuid.uuid4()), 
+                        "keyword": selected_kw['name'], 
+                        "args": final_args_data
+                    }
+                    
+                    add_step_callback(context, new_step)
+                    
+                    # Cleanup
+                    st.session_state[dialog_state_key] = False
+                    if selected_kw_state_key in st.session_state: 
+                        del st.session_state[selected_kw_state_key]
+                    
+                    # Cleanup Logic (ต้องแก้ให้ลบ key ของ locator select ด้วย)
+                    form_input_keys_to_clean_on_submit = []
+                    if selected_kw.get('args'):
+                        for i, arg_item in enumerate(selected_kw.get('args', [])):
+                            clean_arg_name = arg_item.get('name', '').strip('${}')
+                            if not clean_arg_name: continue
+                            
+                            unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
+                            
+                            form_input_keys_to_clean_on_submit.append(unique_key)
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_locator_select") # ลบ key นี้
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_page_select")    # ลบ key นี้ด้วย
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_main_menu_select")
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_sub_menu_select")
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_pagename_select")
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_select")
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_custom")
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_default_text")
+
+                    for key in form_input_keys_to_clean_on_submit:
+                        if key in st.session_state: 
+                            del st.session_state[key]
+
+                    # ลบค่า CSV Quick Insert
+                    csv_keys = [
+                        f"quick_csv_ds_{dialog_state_key}",
+                        f"quick_csv_row_{dialog_state_key}",
+                        f"quick_csv_col_{dialog_state_key}",
+                        f"quick_csv_target_{dialog_state_key}",
+                    ]
+                    for key in csv_keys:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    
+                    st.rerun()
 
         else:  # No keyword selected
             st.markdown("""

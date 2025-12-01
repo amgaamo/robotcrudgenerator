@@ -513,8 +513,8 @@ def _format_value_for_robot(value):
             # Return the original case for '${EMPTY}', lowercase for boolean strings
             formatted_value = v_str.lower() if v_str.lower() in ['true', 'false'] else v_str
 
-        # Pattern 4: UPPERCASE_WITH_UNDERSCORE (likely a constant variable)
-        elif re.match(r'^[A-Z][A-Z0-9_]*$', v_str): formatted_value = f"${{{v_str}}}"
+        # # Pattern 4: UPPERCASE_WITH_UNDERSCORE (likely a constant variable)
+        # elif re.match(r'^[A-Z][A-Z0-9_]*$', v_str): formatted_value = f"${{{v_str}}}"
 
         # Pattern 5: Starts with LOCATOR_ (likely a locator variable)
         elif v_str.startswith('LOCATOR_'): formatted_value = f"${{{v_str}}}"
@@ -572,8 +572,8 @@ def format_args_as_string(args_dict):
                 val_str = v_str.lower() if v_str.lower() in ['true', 'false'] else v_str
             
             # Pattern 4: UPPERCASE_WITH_UNDERSCORE (likely a variable) ✅ NEW!
-            elif re.match(r'^[A-Z][A-Z0-9_]*$', v_str):
-                val_str = f"${{{v_str}}}"
+            # elif re.match(r'^[A-Z][A-Z0-9_]*$', v_str):
+            #     val_str = f"${{{v_str}}}"
             
             # Pattern 5: LOCATOR_ prefix
             elif v_str.startswith('LOCATOR_'):

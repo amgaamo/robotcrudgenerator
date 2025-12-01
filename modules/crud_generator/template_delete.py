@@ -49,15 +49,15 @@ def _generate_suite_setup(all_keywords):
     kw = find_keyword(all_keywords, 'Login System')
     if kw:
         steps.append(create_step(kw['name'], {
-            'headeruser': '${USER_ADMIN}',
-            'headerpassword': '${PASSWORD_ADMIN}'
+            'username': '${USER_ADMIN}',
+            'password': '${PASSWORD_ADMIN}'
         }))
     
     kw = find_keyword(all_keywords, 'Go to SUBMENU name')
     if kw:
         steps.append(create_step(kw['name'], {
-            'menuname': 'MENU_NAME',
-            'submenuname': 'SUB_MENU_NAME'
+            'main_menu': 'MENU_NAME',
+            'submenu': 'SUB_MENU_NAME'
         }))
     
     kw = find_keyword(all_keywords, 'Verify Page Name is correct')
@@ -78,7 +78,7 @@ def _generate_action_list_delete(all_keywords, all_locators):
         loc_search = find_locator(all_locators, ['SEARCH', 'FILTER'])
         steps.append(create_step(kw_search['name'], {
             'locator_field': loc_search if loc_search else {'name': 'LOCATOR_SEARCH_INPUT'},
-            'value': '${SEARCH_VALUE_TO_DELETE}'
+            'keyword': '${SEARCH_VALUE_TO_DELETE}'
         }))
     
     # 2. Click Search button
@@ -86,11 +86,11 @@ def _generate_action_list_delete(all_keywords, all_locators):
     if kw_click:
         loc_search_btn = find_locator(all_locators, ['SEARCH_BTN', 'SEARCH_BUTTON'])
         steps.append(create_step(kw_click['name'], {
-            'locator': loc_search_btn['name'] if loc_search_btn else 'LOCATOR_SEARCH_BTN'
+            'locator_field': loc_search_btn['name'] if loc_search_btn else 'LOCATOR_SEARCH_BTN'
         }))
 
     # 3. Wait Loading Progress
-    kw_wait = find_keyword(all_keywords, 'Wait Loading Progress')
+    kw_wait = find_keyword(all_keywords, 'Wait Loading progress')
     if kw_wait:
         steps.append(create_step(kw_wait['name'], {}))
 
@@ -98,7 +98,7 @@ def _generate_action_list_delete(all_keywords, all_locators):
     if kw_click:
         loc_delete = find_locator(all_locators, ['DELETE_BTN', 'TRASH_BTN', 'REMOVE_BTN'])
         steps.append(create_step(kw_click['name'], {
-            'locator': loc_delete['name'] if loc_delete else 'LOCATOR_DELETE_BTN'
+            'locator_field': loc_delete['name'] if loc_delete else 'LOCATOR_DELETE_BTN'
         }))
         
     # 5. Click Modal OK to confirm deletion
@@ -123,7 +123,7 @@ def _generate_verify_list_delete(all_keywords, all_locators):
         loc_search = find_locator(all_locators, ['SEARCH', 'FILTER'])
         steps['search'].append(create_step(kw_search['name'], {
             'locator_field': loc_search if loc_search else {'name': 'LOCATOR_SEARCH_INPUT'},
-            'value': '${SEARCH_VALUE_TO_DELETE}'
+            'keyword': '${SEARCH_VALUE_TO_DELETE}'
         }))
     
     # 2. Click Search button
@@ -131,23 +131,24 @@ def _generate_verify_list_delete(all_keywords, all_locators):
     if kw_click:
         loc_search_btn = find_locator(all_locators, ['SEARCH_BTN', 'SEARCH_BUTTON'])
         steps['search'].append(create_step(kw_click['name'], {
-            'locator': loc_search_btn['name'] if loc_search_btn else 'LOCATOR_SEARCH_BTN'
+            'locator_field': loc_search_btn['name'] if loc_search_btn else 'LOCATOR_SEARCH_BTN'
         }))
     
     # 3. Wait Loading Progress
-    kw_wait = find_keyword(all_keywords, 'Wait Loading Progress')
+    kw_wait = find_keyword(all_keywords, 'Wait Loading progress')
     if kw_wait:
         steps['search'].append(create_step(kw_wait['name'], {}))
     
-    # 4. Verify Result of data table (expecting 0 rows - item deleted successfully)
-    kw_verify_table = find_keyword(all_keywords, 'Verify Result of data table')
-    if kw_verify_table:
-        steps['table'].append(create_step(kw_verify_table['name'], {
-            'theader': 'LOCATOR_TABLE_HEADER',
-            'tbody': 'LOCATOR_TABLE_BODY',
-            'rowdata': '0',  # KEY DIFFERENCE: Delete expects 0 rows
-            'ignore_case': '${True}',
-            'assertion_columns': []
+    # ==================================================================
+    # 4. (แก้ไขใหม่) Verify Data Table Result is No Record Found
+    # ==================================================================
+    kw_verify_norecord = find_keyword(all_keywords, 'Verify data table result is No Record Found')
+    if kw_verify_norecord:
+        steps['table'].append(create_step(kw_verify_norecord['name'], {
+            # Key: ชื่อ Argument ใน Robot (ตามไฟล์ commonkeywords)
+            # Value: ค่าที่จะส่งไป
+            'locator_tbody': 'LOCATOR_TABLE_BODY',
+            'msg_norecord': '${VAR_DEFAULT_NORECORDFOUND}'
         }))
     
     return steps

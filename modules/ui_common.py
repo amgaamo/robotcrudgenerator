@@ -31,6 +31,13 @@ def load_argument_presets():
 # Load presets at module level
 ARGUMENT_PRESETS, ARGUMENT_PATTERNS = load_argument_presets()
 
+ARGUMENT_PRESETS['button_name'] = {
+    "type": "select_or_input",
+    "options": ["OK", "Yes", "No", "Cancel", "Save", "Confirm", "Close", "Submit", "Back", "Next"],
+    "label": "🔘 Button Name (Text)",
+    "placeholder": "Enter button text (e.g., OK)"
+}
+
 # --- Argument Input Rendering Functions (Moved from ui_test_flow.py) ---
 
 def render_preset_input(arg_name, config, default_value, step_id_or_key_prefix, ws_state=None):
@@ -243,36 +250,83 @@ def render_argument_input(arg_info, ws_state, unique_key_prefix, current_value=N
         return selected_sub_key # Return the key
 
     # --- Case 4: Other Locator Arguments (Buttons, Fields, etc.) ---
-    is_locator_arg_other = any(s in arg_name_lower for s in ['locator', 'field', 'button', 'element', 'header', 'body', 'theader', 'tbody'])
+    is_locator_arg_other = any(s in arg_name_lower for s in ['locator', 'theader', 'tbody'])
 
     if is_locator_arg_other:
-        # (Logic กรอง Locator อื่นๆ เหมือน V6)
-        other_locators = []
-        other_locators.extend([loc['name'] for loc in ws_state.get('locators', []) if loc.get('name')])
-        other_locators.extend([var['name'] for var in ws_state.get('common_variables', []) if var.get('name')])
-        menu_block_names = ['homemenu', 'mainmenu', 'submenu', 'menuname'] # Exclude basic blocks
-
-        filtered_options = []
-        if 'btn' in arg_name_lower or 'button' in arg_name_lower:
-             filtered_options = [loc for loc in other_locators if ('btn' in loc.lower() or 'button' in loc.lower()) and (loc.lower() not in menu_block_names)]
-        else:
-             filtered_options = [loc for loc in other_locators if ('btn' not in loc.lower() and 'button' not in loc.lower()) and (loc.lower() not in menu_block_names)]
-
-        locator_options = [''] + sorted(list(set(filtered_options)))
+        st.markdown(f"**🎯 {arg_name}**")
+        
+        # 1. เตรียมข้อมูล Locators และจัดกลุ่มตาม Page
+        all_locators = ws_state.get('locators', [])
+        common_vars = ws_state.get('common_variables', [])
+        menu_block_names = ['homemenu', 'mainmenu', 'submenu', 'menuname']
+        
+        pages_dict = {}
+        
+        for loc in all_locators:
+            loc_name = loc.get('name', '')
+            page_name = loc.get('page_name', 'Other') # ถ้าไม่มี page_name ให้เป็น Other
+            
+            if loc_name.lower() in menu_block_names: continue # ข้าม Menu Variables
+            
+            if page_name not in pages_dict:
+                pages_dict[page_name] = []
+            pages_dict[page_name].append(loc_name)
+        
+        if common_vars:
+             pages_dict['Global Variables'] = [var.get('name', '') for var in common_vars if var.get('name')]
+        
+        # 2. จัดการค่า Default (ถ้ามีค่าเดิมอยู่ ต้องหาว่าอยู่ Page ไหน)
         effective_default = '' if default_value == '${EMPTY}' else default_value
-        default_index = 0
+        # ลบ ${} ออกถ้ามี เพื่อใช้ค้นหาใน list
+        clean_default = get_clean_locator_name(effective_default)
+        
+        default_page = ''
+        if clean_default:
+            for page, locs in pages_dict.items():
+                if clean_default in locs:
+                    default_page = page
+                    break
+        
+        # 3. สร้าง Dropdown เลือก Page
+        page_options = [''] + sorted(pages_dict.keys())
         try:
-            if effective_default and effective_default in locator_options:
-                default_index = locator_options.index(effective_default)
-        except ValueError: default_index = 0
+            default_page_index = page_options.index(default_page) if default_page else 0
+        except ValueError:
+            default_page_index = 0
+            
+        selected_page = st.selectbox(
+            "📄 Step 1: Select Page",
+            options=page_options,
+            index=default_page_index,
+            key=f"{unique_key_prefix}_page_select",
+            help="Filter locators by page"
+        )
+        
+        # 4. สร้าง Dropdown เลือก Locator (กรองตาม Page ที่เลือก)
+        locator_options = ['']
+        if selected_page:
+            page_locators = pages_dict.get(selected_page, [])
+            # เรียงลำดับตามชื่อ
+            locator_options = [''] + sorted(page_locators)
+            st.caption(f"ℹ️ Found {len(locator_options)-1} locators in **{selected_page}**")
+        else:
+            st.caption("ℹ️ Please select a page first")
+            
+        # หา Index ของ Locator เดิม
+        try:
+            loc_index = locator_options.index(clean_default) if clean_default in locator_options else 0
+        except ValueError:
+            loc_index = 0
 
-        col1, col2 = st.columns([4, 1])
-        with col1:
-             selected_locator = st.selectbox(
-                 f"🎯 {arg_name}", locator_options, index=default_index,
-                 key=f"{unique_key_prefix}_locator_select", # Key เดิมสำหรับ Locator ทั่วไป
-                 format_func=get_clean_locator_name
-             )
+        selected_locator = st.selectbox(
+            "🔍 Step 2: Select Locator",
+            options=locator_options,
+            index=loc_index,
+            key=f"{unique_key_prefix}_locator_select",
+            format_func=get_clean_locator_name,
+            disabled=(not selected_page)
+        )
+        
         return selected_locator
 
     # === END: NEW LOGIC (V7) ===
@@ -730,8 +784,22 @@ def render_step_card_compact(step, index, section_key, ws, manager_module, card_
     # === CARD BODY (Conditional Rendering) ===
     if not edit_mode:
         # --- Display Mode: Show simple caption ---
-        valid_args = {k: v for k, v in step.get('args', {}).items() if (v or v is False)}
+        
+        # ✅ FIX: Clean and Deduplicate Arguments for Display
+        # (ป้องกันการแสดงผลซ้ำ เช่น ${arg} กับ arg ให้ถือเป็นตัวเดียวกัน)
+        raw_args = step.get('args', {})
+        valid_args = {}
+        
+        if raw_args:
+            for k, v in raw_args.items():
+                if v or v is False: # Check validity
+                    # ลบ ${} ออกจากชื่อตัวแปรเพื่อให้เป็นมาตรฐานเดียวกัน
+                    clean_k = k.strip('${}') 
+                    # บันทึกลง dict ใหม่ (ถ้ามีคีย์ซ้ำ ค่าจะถูกอัปเดตทับด้วยค่าล่าสุด)
+                    valid_args[clean_k] = v
+
         if valid_args:
+            # ส่ง valid_args ที่คลีนแล้วไปแสดงผล
             args_str = format_args_as_string(valid_args)
             if args_str:
                 st.markdown(
@@ -775,7 +843,7 @@ def render_step_card_compact(step, index, section_key, ws, manager_module, card_
         # ✅ Smart Filter: ตรวจสอบประเภทของ step ที่กำลัง edit
         step_type = step.get('type', 'common')  # default เป็น common
         
-        if step_type == 'keyword_factory' and card_prefix == "crud":
+        if step_type == 'keyword_factory' and card_prefix.startswith("crud"):
             # ถ้า step เป็น Keyword Factory → แสดงเฉพาะ Keyword Factory keywords
             crud_ws = st.session_state.get('crud_generator_workspace', {})
             all_kws = crud_ws.get('keyword_factory_keywords', [])
@@ -934,28 +1002,30 @@ def render_step_card_compact(step, index, section_key, ws, manager_module, card_
 
             st.markdown("---")
 
-        # --- Argument Inputs (SIMPLIFIED LOGIC) ---
+        # --- Argument Inputs (FIXED LOGIC) ---
         temp_args_key = f"edit_temp_args_{step['id']}"
 
-        # Initialize temp args ONCE when entering edit mode
-        if temp_args_key not in st.session_state or not st.session_state.get(temp_args_key): # Check if empty too
+        # 1. Initialize temp args ONCE (เมื่อเริ่มกด Edit)
+        if temp_args_key not in st.session_state or not st.session_state.get(temp_args_key):
             st.session_state[temp_args_key] = {}
-            # Preload from current step if empty
             current_step_args_init = step.get('args', {})
+            
+            # ✅ FIX: ตอนโหลดค่าเดิม ให้ Clean Key ก่อน (ลบ ${} ออก) เพื่อให้ตรงกับ input field
             if current_step_args_init:
-                 st.session_state[temp_args_key] = current_step_args_init.copy()
-            # If still empty, try prefilling defaults (unlikely needed if preload works)
+                 for k, v in current_step_args_init.items():
+                     clean_k = k.strip('${}')
+                     st.session_state[temp_args_key][clean_k] = v
+            
+            # ถ้าไม่มีค่าเดิม ให้ลองโหลด Default จาก Keyword Definition
             elif selected_kw and selected_kw.get('args'):
                 for arg_item in selected_kw.get('args', []):
                     clean_arg_name_init = arg_item.get('name', '').replace('${', '').replace('}', '')
-                    arg_info_init = arg_item.get('info', {}) # Assuming info holds defaults now
+                    arg_info_init = arg_item.get('info', {}) 
                     initial_value_init = arg_info_init.get('default', '')
                     st.session_state[temp_args_key][clean_arg_name_init] = initial_value_init
 
-
-        # Check if keyword changed
+        # 2. Check if keyword changed (Reset ถ้าเปลี่ยน Keyword)
         if st.session_state.get(edit_kw_state_key) != st.session_state.get(f"prev_kw_{step['id']}", ""):
-            # Reset temp args when keyword changes
             st.session_state[temp_args_key] = {}
             if selected_kw and selected_kw.get('args'):
                 for arg_item in selected_kw.get('args', []):
@@ -965,34 +1035,49 @@ def render_step_card_compact(step, index, section_key, ws, manager_module, card_
                         continue
                     st.session_state[temp_args_key][clean_arg_name_change] = arg_info_change.get('default', '')
             st.session_state[f"prev_kw_{step['id']}"] = selected_kw_name
-            # Don't rerun here
 
-        # Render argument inputs
+        # 3. Render argument inputs
         if selected_kw and selected_kw.get('args'):
             st.markdown("**Arguments:**")
 
             for arg_item in selected_kw.get('args', []):
                 arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
-                clean_arg_name = arg_info.get('name', '').strip('${}')
+                
+                raw_arg_name = arg_info.get('name', '') # ชื่อดิบที่มี ${}
+                clean_arg_name = raw_arg_name.strip('${}') # ชื่อคลีนสำหรับ UI
+                
                 if not clean_arg_name:
                     continue
                 arg_info['name'] = clean_arg_name
 
-                # ✅ อ่านค่าจาก temp_args_key
-                current_value = st.session_state[temp_args_key].get(clean_arg_name, arg_info.get('default', ''))
+                # ✅ FIX: อ่านค่าโดยเช็คทั้ง Key แบบ Clean และ Raw
+                # (ป้องกันกรณีข้อมูลเก่าเก็บ key ไว้ต่างรูปแบบกัน)
+                val_from_temp_clean = st.session_state[temp_args_key].get(clean_arg_name)
+                val_from_temp_raw = st.session_state[temp_args_key].get(raw_arg_name)
+                
+                if val_from_temp_clean is not None:
+                    current_value = val_from_temp_clean
+                elif val_from_temp_raw is not None:
+                    current_value = val_from_temp_raw
+                else:
+                    current_value = arg_info.get('default', '')
 
-                # ✅ สร้าง unique key
+                # สร้าง unique key สำหรับ Input Widget
                 input_key = f"crud_edit_{step['id']}_{clean_arg_name}"
 
-                # ✅ Render input
-                # Import necessary functions/variables if not already done at top level
+                # Render Input
                 rendered_value = render_argument_input(
                     arg_info,
                     ws_state,
                     input_key,
                     current_value=current_value,
-                    selected_kw_name=selected_kw_name # Pass selected keyword name
+                    selected_kw_name=selected_kw_name
                 )
+
+                # ✅ FIX: ใช้ค่าที่ Render ออกมาอัปเดตกลับเข้า temp state ทันที
+                # เพื่อให้ค่าไม่หายเมื่อมีการ Rerun (เช่น กดปุ่ม Insert CSV)
+                if rendered_value is not None:
+                    st.session_state[temp_args_key][clean_arg_name] = rendered_value
 
                 # Determine the actual key used by render_argument_input & GET value
                 is_locator_arg = any(s in clean_arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'menu', 'header', 'body', 'theader', 'tbody'])
@@ -1059,6 +1144,67 @@ def render_step_card_compact(step, index, section_key, ws, manager_module, card_
         col1, col2 = st.columns(2)
         with col1:
             if st.button("✅ Save Changes", key=f"save_edit_{step['id']}", use_container_width=True, type="primary"):
+                if selected_kw.get('args'):
+                    for arg_item in selected_kw.get('args', []):
+                        # เตรียมชื่อตัวแปร
+                        arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
+                        clean_arg_name = arg_info.get('name', '').strip('${}')
+                        if not clean_arg_name: continue
+                        
+                        # Key พื้นฐานของ Widget
+                        input_key = f"crud_edit_{step['id']}_{clean_arg_name}"
+                        
+                        # ตัวแปรสำหรับเช็คเงื่อนไข
+                        kw_name_lower = str(selected_kw_name).lower()
+                        arg_lower = clean_arg_name.lower()
+                        final_value = None
+
+                        # --- 1. Menu Locators ---
+                        if 'go to menu name' in kw_name_lower and clean_arg_name == 'menu_locator':
+                            val = st.session_state.get(f"{input_key}_main_menu_select", '')
+                            final_value = f"${{mainmenu}}[{val}]" if val else ""
+                        elif 'go to submenu name' in kw_name_lower and clean_arg_name == 'main_menu':
+                            final_value = st.session_state.get(f"{input_key}_main_menu_select", '')
+                        elif 'go to submenu name' in kw_name_lower and clean_arg_name == 'submenu':
+                            final_value = st.session_state.get(f"{input_key}_sub_menu_select", '')
+
+                        # --- 2. PRESETS (สำคัญ: เช็คก่อน Locator เพื่อดัก button_name) ---
+                        elif clean_arg_name in ARGUMENT_PRESETS:
+                            config = ARGUMENT_PRESETS[clean_arg_name]
+                            input_type = config.get('type')
+                            if input_type == "select_or_input":
+                                sel = st.session_state.get(f"{input_key}_select")
+                                if sel == "📝 Other (custom)":
+                                    final_value = st.session_state.get(f"{input_key}_custom")
+                                else:
+                                    final_value = sel
+                            elif input_type == "boolean":
+                                final_value = 'true' if st.session_state.get(input_key, False) else 'false'
+                            else:
+                                final_value = st.session_state.get(input_key)
+
+                        # --- 3. LOCATOR ---
+                        elif any(s in arg_lower for s in ['locator', 'field', 'button', 'element', 'header', 'body', 'theader', 'tbody']):
+                            final_value = st.session_state.get(f"{input_key}_locator_select")
+
+                        # --- 4. PATTERNS & DEFAULT ---
+                        else:
+                            matched = False
+                            for p_key in ARGUMENT_PATTERNS.keys():
+                                if p_key in arg_lower:
+                                    final_value = st.session_state.get(input_key)
+                                    matched = True
+                                    break
+                            if not matched:
+                                final_value = st.session_state.get(f"{input_key}_default_text")
+
+                        # Fallback & Update
+                        if final_value is None: 
+                            # ถ้าหาไม่เจอ ให้ลองดึงค่าเดิมที่มีอยู่
+                            final_value = st.session_state.get(temp_args_key, {}).get(clean_arg_name, '')
+                        
+                        st.session_state[temp_args_key][clean_arg_name] = final_value    
+                      
                 # ✅ ใช้ค่าจาก temp_args_key โดยตรง
                 updated_data = {
                     "keyword": selected_kw_name,

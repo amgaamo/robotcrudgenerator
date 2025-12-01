@@ -138,7 +138,7 @@ def render_crud_generator_tab_improved():
 
             # --- 4.2 Phase Navigation (Buttons แทน Tabs) ---
             if 'crud_active_phase' not in st.session_state:
-                st.session_state.crud_active_phase = 'actions'
+                st.session_state.crud_active_phase = 'setup'
 
             col1, col2, col3, col4 = st.columns(4)
             with col1:
@@ -743,24 +743,76 @@ def render_step_toolbar(step, index, section_key, total_steps):
             st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-
-
-
-
-
-# ======= TABLE VERIFICATION UI =======
 def render_table_verification_ui(step, ws):
-    """Simplified UI for table verification config"""
+    """Simplified UI for table verification config (Updated with Dropdowns)"""
     step_id = step['id']
+    
+    # 1. เตรียมข้อมูล Locators
+    ws_state = st.session_state.studio_workspace
+    all_locators = ws_state.get('locators', [])
+    
+    # 2. กำหนด Keywords สำหรับกรอง (เพิ่มได้ในอนาคตที่นี่)
+    HEADER_KEYWORDS = ['THEADER', 'TABLE_HEADER', 'THEAD']
+    BODY_KEYWORDS = ['TBODY', 'TABLE_BODY']
+    
+    # 3. ฟังก์ชันช่วยกรอง
+    def get_filtered_locator_names(keywords):
+        filtered = [
+            loc['name'] for loc in all_locators 
+            if any(k in loc.get('name', '').upper() for k in keywords)
+        ]
+        return sorted(list(set(filtered))) # เรียงลำดับและตัดตัวซ้ำ
+
+    header_options = get_filtered_locator_names(HEADER_KEYWORDS)
+    body_options = get_filtered_locator_names(BODY_KEYWORDS)
+
+    # 4. จัดการค่าปัจจุบัน (Current Value)
+    # ถ้าค่าเดิมที่มีอยู่ ไม่ตรงกับ Filter (เช่น พิมพ์มาเอง) ให้เพิ่มเข้าไปใน list ด้วย เพื่อไม่ให้ค่าหาย
+    current_th = step['args'].get('theader', '')
+    current_tb = step['args'].get('tbody', '')
+
+    if current_th and current_th not in header_options:
+        header_options.insert(0, current_th)
+    
+    if current_tb and current_tb not in body_options:
+        body_options.insert(0, current_tb)
+        
+    # เพิ่มตัวเลือกว่าง ถ้ายังไม่มี
+    if '' not in header_options: header_options.insert(0, '')
+    if '' not in body_options: body_options.insert(0, '')
+
+    # 5. Render UI เป็น Selectbox
     st.markdown("**Table Locators**")
     col1, col2 = st.columns(2)
+    
     with col1:
-        step['args']['theader'] = st.text_input( "Header Locator",
-            value=step['args'].get('theader', 'LOCATOR_TABLE_HEADER'), key=f"th_{step_id}" )
+        # หา Index ของค่าปัจจุบัน
+        try: th_index = header_options.index(current_th)
+        except ValueError: th_index = 0
+            
+        step['args']['theader'] = st.selectbox(
+            "Header Locator",
+            options=header_options,
+            index=th_index,
+            format_func=get_clean_locator_name, # แสดงชื่อสวยๆ ตัด ${} ออก
+            key=f"th_{step_id}",
+            help=f"Filter: {', '.join(HEADER_KEYWORDS)}"
+        )
+        
     with col2:
-        step['args']['tbody'] = st.text_input( "Body Locator",
-            value=step['args'].get('tbody', 'LOCATOR_TABLE_BODY'), key=f"tb_{step_id}" )
+        try: tb_index = body_options.index(current_tb)
+        except ValueError: tb_index = 0
+            
+        step['args']['tbody'] = st.selectbox(
+            "Body Locator",
+            options=body_options,
+            index=tb_index,
+            format_func=get_clean_locator_name,
+            key=f"tb_{step_id}",
+            help=f"Filter: {', '.join(BODY_KEYWORDS)}"
+        )
 
+    # --- ส่วน Assertion Columns (คงเดิม) ---
     st.markdown("---")
     st.markdown("**Column Assertions**")
 
@@ -789,7 +841,6 @@ def render_table_verification_ui(step, ws):
     if st.button("➕ Add Column Assertion", use_container_width=True, key=f"tadd_{step_id}"):
         assertions.append({'header_name': '', 'expected_value': ''})
         st.rerun()
-
 
 # ======= STICKY PREVIEW =======
 def render_sticky_preview(ws):
@@ -1299,7 +1350,18 @@ def render_kw_factory_import_dialog():
                                         arg_name = arg.get('name', '').strip('${}')
                                         if arg_name == target_arg:
                                             key = f"kw_factory_arg_{selected_kw['id']}_{arg_name}_{i}"
+                                            
+                                            # 1. Update Logical Key (ค่าหลัก)
                                             st.session_state[key] = insert_syntax
+                                            
+                                            # 2. Update Widget Keys (ค่าที่ผูกกับ Input บนหน้าจอ)
+                                            # render_argument_input ใช้ suffix _default_text หรือ _custom ในบางกรณี
+                                            if f"{key}_default_text" in st.session_state:
+                                                st.session_state[f"{key}_default_text"] = insert_syntax
+                                            
+                                            if f"{key}_custom" in st.session_state:
+                                                st.session_state[f"{key}_custom"] = insert_syntax
+
                                             st.toast(f"✅ Inserted '{insert_syntax}' into '{target_arg}'", icon="✅")
                                             st.rerun()
                                             break
