@@ -562,7 +562,7 @@ def generate_robot_script():
     # 3. รวมเข้า List
     settings_lines = [
         "*** Settings ***",
-        "Resource    ../../resources/commonkeywords.resource",
+        "Resource    ../resources/commonkeywords.resource",
         suite_setup_str,
         test_setup_str,
         test_teardown_str,

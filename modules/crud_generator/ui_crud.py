@@ -15,6 +15,7 @@ from ..session_manager import get_clean_locator_name
 from ..ui_common import render_argument_input, render_step_card_compact, extract_csv_datasource_keywords, ARGUMENT_PRESETS
 from ..dialog_commonkw import render_add_step_dialog_base
 from modules.utils import format_args_as_string, util_get_csv_first_column_values
+from ..file_manager import create_new_robot_file, scan_robot_project
 
 # ======= ENTRY POINT FUNCTION =======
 def render_crud_generator_tab():
@@ -844,7 +845,7 @@ def render_table_verification_ui(step, ws):
 
 # ======= STICKY PREVIEW =======
 def render_sticky_preview(ws):
-    """Live Preview (Uses custom CSS div for scrolling) - ไม่มีหัวข้อ"""
+    """Live Preview & Export Options (Updated)"""
     
     script_code = manager.generate_robot_script()
 
@@ -852,20 +853,51 @@ def render_sticky_preview(ws):
     st.code(script_code, language="robotframework", line_numbers=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.download_button(
-        label="📥 Download Script",
-        data=script_code,
-        file_name=f"{ws.get('test_case_name', 'test')}.robot",
-        mime="text/plain",
-        use_container_width=True,
-        type="primary"
-    )
+    # --- ส่วน Export Options ใหม่ (แทน Download & Stats) ---
+    st.markdown("#### 💾 Export Options")
+    
+    with st.container(border=True):
+        st.caption("Create a new test case file in the `testsuite` folder.")
+        
+        # 1. ตั้งชื่อไฟล์ Default ตามชื่อ Test Case
+        default_filename = f"{ws.get('test_case_name', 'TC_New_Test')}"
+        # ถ้าไม่มี .robot ต่อท้าย ให้เติมให้
+        if not default_filename.lower().endswith('.robot'):
+            default_filename += ".robot"
+            
+        new_file_name = st.text_input(
+            "New File Name:", 
+            value=default_filename,
+            key="crud_export_filename_input",
+            help="File will be saved to PROJECT_ROOT/testsuite/"
+        )
 
-    with st.expander("📊 Script Stats", expanded=False):
-        total_steps = sum(len(ws['steps'][key]) for key in ws['steps'])
-        st.metric("Total Steps", total_steps)
-        st.metric("Setup Steps", len(ws['steps'].get('suite_setup', [])))
-        st.metric("Main Steps", len(ws['steps'].get('action_list', []) + ws['steps'].get('action_detail', [])))
+        # 2. ปุ่ม Create File
+        if st.button("📝 Create File", type="primary", use_container_width=True, key="btn_crud_create_file"):
+            project_path = st.session_state.get('project_path')
+            
+            # Validation
+            if not project_path:
+                st.error("⚠️ Please set the **Project Path** in the sidebar first.")
+            elif not new_file_name.strip():
+                st.error("⚠️ Please enter a file name.")
+            elif not new_file_name.endswith('.robot'):
+                st.error("⚠️ File name must end with `.robot` extension.")
+            else:
+                # เตรียม Path: Project/testsuite/filename.robot
+                save_dir = os.path.join(project_path, "testsuite")
+                os.makedirs(save_dir, exist_ok=True) # สร้างโฟลเดอร์ถ้ายังไม่มี
+                full_path = os.path.join(save_dir, new_file_name)
+                
+                # บันทึกไฟล์
+                success = create_new_robot_file(full_path, script_code)
+                
+                if success:
+                    st.success(f"✅ Successfully created file at: `testsuite/{new_file_name}`")
+                    # อัปเดตโครงสร้างโปรเจกต์ (เพื่อให้เห็นไฟล์ใหม่ใน Sidebar ทันทีถ้าจำเป็น)
+                    st.session_state.project_structure = scan_robot_project(project_path)
+                else:
+                    st.error(f"❌ Failed to create file at: `{full_path}`")
 
 
 # Wrapper function for CRUD Add Dialog
