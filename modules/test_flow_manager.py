@@ -3,30 +3,8 @@ Test Flow Manager Module
 Handles the business logic for the Test Flow tab, including script generation.
 (Version 15.2 - Integrated with advanced categorizer)
 """
-# 🎯 1. IMPORT: เพิ่มบรรทัดนี้เพื่อเรียกใช้ฟังก์ชันจัดกลุ่มแบบใหม่
+
 from .keyword_categorizer import categorize_keywords
-
-# 🎯 2. REMOVE: ลบฟังก์ชัน categorize_keywords ของเก่าที่เคยอยู่ตรงนี้ทิ้งไป
-# def categorize_keywords(keywords):
-#     """Categorizes a list of keywords based on their names."""
-#     ... (โค้ดเก่าทั้งหมดถูกลบ) ...
-
-def _format_step_for_script(step):
-    """Formats a single step dictionary into a Robot Framework string line."""
-    keyword = step.get('keyword', '')
-    args = step.get('args', {})
-    
-    args_list = []
-    for arg_name, arg_value in args.items():
-        if arg_value:
-            is_locator = any(s in arg_name.lower() for s in ['locator', 'field', 'button', 'element'])
-            if is_locator and not str(arg_value).startswith('${'):
-                formatted_value = f"${{{arg_value}}}"
-            else:
-                formatted_value = str(arg_value)
-            args_list.append(formatted_value)
-            
-    return f"{keyword}    {'    '.join(args_list)}".strip()
 
 def generate_robot_script_from_timeline(ws_state):
     """

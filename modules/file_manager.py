@@ -7,6 +7,7 @@ import re
 import streamlit as st
 import pandas as pd
 from datetime import datetime 
+from .utils import parse_robot_variables, parse_data_sources
 
 def scan_robot_project(path):
     """Scan Robot Framework project structure"""
@@ -78,28 +79,32 @@ def create_new_robot_file(file_path, content):
         return False
 
 def read_robot_variables_from_content(content: str):
-    """Reads variables from a string content instead of a file path."""
+    """
+    Reads variables from a string content instead of a file path.
+    (Refactored to call utils.py and handle Streamlit warnings here)
+    """
     try:
+        # --- START: โค้ดที่แก้ไข ---
+
+        # 1. แก้ไข: เรียกใช้ฟังก์ชันจาก utils
+        #    (เปลี่ยนชื่อตัวแปรจาก 'locators' เป็น 'variables' เพื่อความชัดเจน)
+        variables = parse_robot_variables(content)
+        
+        # 2. ย้าย: Logic การแสดง warning มาไว้ที่นี่ (คงเดิม)
         variables_match = re.search(r'\*\*\* Variables \*\*\*(.*?)(?=\*\*\*|$)', content, re.DOTALL | re.IGNORECASE)
         if not variables_match:
             st.warning("Could not find a '*** Variables ***' section in the content.")
-            return []
-
-        variables_content = variables_match.group(1)
-        locators = []
-        variable_pattern = re.compile(r'^\s*\$\{([^}]+)\}\s+(.+?)\s*$', re.MULTILINE)
-
-        for match in variable_pattern.finditer(variables_content):
-            variable_name = match.group(1).strip()
-            if variable_name.upper().startswith('LOCATOR_'):
-                locators.append({
-                    'name': variable_name,
-                    'value': match.group(2).strip()
-                })
         
-        if not locators:
-            st.warning("No variables starting with `LOCATOR_` found.")
-        return locators
+        # 3. [FIX] แก้ไข Warning ที่ผิดพลาด
+        #    เปลี่ยนจาก "No variables starting with `LOCATOR_` found."
+        #    เป็น "No variables were found in the '*** Variables ***' section."
+        if variables_match and not variables:
+            st.warning("No variables were found in the '*** Variables ***' section.")
+            
+        return variables # 4. คืนค่า 'variables' ที่ถูกต้อง (ไม่ใช่ 'locators')
+    
+        # --- END: โค้ดที่แก้ไข ---
+
     except Exception as e:
         st.error(f"An error occurred while parsing content: {str(e)}")
         return []
@@ -414,96 +419,110 @@ def append_to_api_base(file_path, variable_line, keyword_line):
     except Exception as e:
         return False, f"An error occurred: {e}"
 
-# ===================================================================
-# ===== 🎯 START: NEW FUNCTION FOR DATASOURCE PARSING (V.2) =====
-# ===================================================================
-
-def parse_data_sources_from_resource(content: str):
+def update_menu_locators_in_file(file_path, menu_locators):
     """
-    Parses a datasources.resource file content to extract CSV paths.
-    V.7: Fixed path cleaning and proper filename extraction.
+    อัปเดต menu locators ในไฟล์ commonkeywords
+    
+    Args:
+        file_path: path ไปยังไฟล์ที่ต้องการอัปเดต
+        menu_locators: dict ของ menu locators {
+            'homemenu': {'name': 'homemenu', 'value': '...', 'type': 'scalar'},
+            'mainmenu': {'name': 'mainmenu', 'value': {...}, 'type': 'dict'},
+            ...
+        }
     """
-    variables = {}
-    data_sources = []
-
     try:
-        # 1. Parse *** Variables *** section
-        variables_match = re.search(r'\*\*\* Variables \*\*\*(.*?)(?=\*\*\*|$)', content, re.DOTALL | re.IGNORECASE)
-        if variables_match:
-            variables_content = variables_match.group(1)
-            var_pattern = re.compile(r'^\s*\$\{([^}]+)\}\s+([^\s].*?)\s*(?:#.*)?$', re.MULTILINE)
-            for match in var_pattern.finditer(variables_content):
-                var_name = match.group(1).strip()
-                var_value = match.group(2).strip()
-                variables[var_name] = var_value
-
-        # 2. Parse *** Keywords *** section
-        keywords_match = re.search(r'\*\*\* Keywords \*\*\*(.*)', content, re.DOTALL | re.IGNORECASE)
-        if keywords_match:
-            keywords_content = keywords_match.group(1)
-            keyword_blocks = re.split(r'\n(?=\S)', keywords_content.strip())
-
-            for block in keyword_blocks:
-                lines = block.strip().split('\n')
-                keyword_name_line = lines[0].strip()
+        # อ่านไฟล์ปัจจุบัน
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        # หา section markers
+        menu_section_start = None
+        menu_section_end = None
+        
+        for i, line in enumerate(lines):
+            if '### All Menu Locator ###' in line:
+                menu_section_start = i
+            elif '### All Menu Locator (END) ###' in line:
+                menu_section_end = i
+                break
+        
+        # สร้าง content ใหม่สำหรับ menu section
+        new_menu_lines = ['### All Menu Locator ###\n']
+        
+        # เรียงลำดับ: homemenu, mainmenu, submenu, menuname
+        menu_order = ['homemenu', 'mainmenu', 'submenu', 'menuname']
+        
+        for menu_name in menu_order:
+            if menu_name in menu_locators:
+                menu_data = menu_locators[menu_name]
                 
-                if not keyword_name_line.lower().startswith('import datasource'):
-                    continue 
+                if menu_data['type'] == 'scalar':
+                    # ${homemenu}    value
+                    new_menu_lines.append(f"${{{menu_name}}}    {menu_data['value']}\n")
                 
-                csv_var_match = re.search(r'Import datasource file\s+\$\{([^}]+)\}', block, re.IGNORECASE)
-                ds_var_match = re.search(r'Set Global Variable\s+\$\{(DS_[^}]+)\}', block, re.IGNORECASE)
-                col_var_match = re.search(r'Set Global Variable\s+\$\{([^}]+)\}\s+\$\{value_col\}', block, re.IGNORECASE)
-
-                if csv_var_match and ds_var_match and col_var_match:
-                    csv_path_var_name = csv_var_match.group(1)
-                    ds_name = ds_var_match.group(1)
-                    col_name = col_var_match.group(1)
-
-                    # --- ✅ FIXED: Proper path cleaning and filename extraction ---
-                    csv_file_name = "NOT_FOUND"
-                    if csv_path_var_name in variables:
-                        full_path_value = variables[csv_path_var_name]
-                        # Example: ${CURDIR}${/}datatest${/}login_data.csv
-                        
-                        # Step 1: Remove all Robot Framework variables
-                        clean_path = full_path_value
-                        clean_path = re.sub(r'\$\{CURDIR\}', '', clean_path)
-                        clean_path = re.sub(r'\$\{/\}', '/', clean_path)
-                        clean_path = re.sub(r'\$\{[^}]+\}', '', clean_path)  # Remove any other ${...}
-                        
-                        # Step 2: Clean up the path (remove leading/trailing slashes and spaces)
-                        clean_path = clean_path.strip().strip('/')
-                        # clean_path should now be: datatest/login_data.csv
-                        
-                        # Step 3: Extract only the filename (last part after /)
-                        if '/' in clean_path:
-                            csv_file_name = clean_path.split('/')[-1]
-                        else:
-                            csv_file_name = clean_path
-                        
-                        # Step 4: Extra safety - ensure .csv extension and clean any trailing chars
-                        csv_file_name = csv_file_name.strip()
-                        if not csv_file_name.endswith('.csv'):
-                            # Try to find .csv in the string
-                            csv_match = re.search(r'([^/\\]+\.csv)', csv_file_name)
-                            if csv_match:
-                                csv_file_name = csv_match.group(1)
-                    else:
-                        print(f"Warning: Variable '${csv_path_var_name}' not found in *** Variables ***")
-
-                    data_sources.append({
-                        'file_name': csv_file_name,
-                        'name': ds_name,
-                        'col_name': col_name,
-                        'is_imported': True
-                    })
-
-        return data_sources
-
+                elif menu_data['type'] == 'dict':
+                    # &{mainmenu}    key1=value1
+                    # ...            key2=value2
+                    new_menu_lines.append(f"&{{{menu_name}}}")
+                    
+                    items = menu_data.get('value', {})
+                    if isinstance(items, dict):
+                        first = True
+                        for key, value in items.items():
+                            if first:
+                                new_menu_lines[-1] += f"    {key}={value}\n"
+                                first = False
+                            else:
+                                new_menu_lines.append(f"...{' ' * (len(menu_name) + 5)}{key}={value}\n")
+                
+                new_menu_lines.append('\n')  # เว้นบรรทัดระหว่างเมนู
+        
+        new_menu_lines.append('### All Menu Locator (END) ###\n')
+        
+        # แทนที่ section เดิม
+        if menu_section_start is not None and menu_section_end is not None:
+            new_lines = lines[:menu_section_start] + new_menu_lines + lines[menu_section_end + 1:]
+        else:
+            # ถ้าไม่มี section ให้เพิ่มที่ท้ายไฟล์
+            new_lines = lines + ['\n'] + new_menu_lines
+        
+        # เขียนกลับไปยังไฟล์
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+        
+        return True
+        
     except Exception as e:
-        st.error(f"Error parsing datasources file: {e}")
-        return []
+        st.error(f"Error updating menu locators: {e}")
+        return False
 
-# ===================================================================
-# ===== 🎯 END: NEW FUNCTION =====
-# ===================================================================
+
+def read_menu_locators_from_file(file_path):
+    """
+    อ่าน menu locators จากไฟล์ commonkeywords
+    
+    Returns:
+        dict: menu locators ในรูปแบบ {
+            'homemenu': {'name': 'homemenu', 'value': '...', 'type': 'scalar'},
+            ...
+        }
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        all_variables = read_robot_variables_from_content(content)
+        
+        MENU_LOCATOR_NAMES = ['homemenu', 'mainmenu', 'submenu', 'menuname']
+        menu_locators = {}
+        
+        for v in all_variables:
+            if v.get('name') in MENU_LOCATOR_NAMES:
+                menu_locators[v.get('name')] = v
+        
+        return menu_locators
+        
+    except Exception as e:
+        st.error(f"Error reading menu locators: {e}")
+        return {}

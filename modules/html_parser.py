@@ -1,11 +1,7 @@
-"""
-HTML Parser for Robot Framework Locator Generation
-Ported from JavaScript locator generator logic
-"""
-
 from bs4 import BeautifulSoup
 import re
 from typing import List, Set
+
 
 class LocatorField:
     """Represents a single locator field"""
@@ -13,6 +9,7 @@ class LocatorField:
         self.variable = variable
         self.xpath = xpath
         self.priority = priority  # 1=highest, 5=lowest
+
 
 class HTMLLocatorParser:
     """Parse HTML and extract locators with priority"""
@@ -28,15 +25,16 @@ class HTMLLocatorParser:
         if not elem_id:
             return False
         
-        # FIX: Regex to cover 'sidebar-sub-menu-10'
-        if re.match(r'^(menu|sidebar|item|link|btn|elem|sub-menu).*[\-_]\d+$', elem_id, re.IGNORECASE):
+        # Regex to cover 'sidebar-sub-menu-10' etc.
+        if re.match(r'^(menu|sidebar|item|link|btn|elem|sub-menu).*[\-_]\d+$',
+                    elem_id, re.IGNORECASE):
             return False
         
         return True
 
     def get_menu_text(self, element) -> str:
         """
-        Get clean text from a menu element, removing icons and other clutter.
+        Get clean text from a menu/button element, removing icons and other clutter.
         """
         if not element:
             return ''
@@ -60,7 +58,8 @@ class HTMLLocatorParser:
         xpath_lower = xpath.lower()
         
         # Button elements
-        if '//button' in xpath_lower or "[@type='button']" in xpath_lower or "[@type='submit']" in xpath_lower:
+        if '//button' in xpath_lower or "[@type='button']" in xpath_lower \
+           or "[@type='submit']" in xpath_lower:
             return '_BTN'
         
         # Input elements
@@ -89,9 +88,6 @@ class HTMLLocatorParser:
         # Link/Anchor
         elif '//a' in xpath_lower:
             return '_LINK'
-
-        # --- REMOVED MENU LOGIC ---
-        # Menu logic is now handled in the extractor functions themselves
         
         # Table elements
         elif '//table' in xpath_lower:
@@ -124,13 +120,18 @@ class HTMLLocatorParser:
         if not text:
             return ''
         
+        # camelCase → camel_Case
         clean_text = re.sub(r'([a-z])([A-Z])', r'\1_\2', text)
+        # ตัด * หรือ : ท้าย label
         clean_text = re.sub(r'\s*\*?[:]?$', '', clean_text)
+        # / () → ช่องว่าง
         clean_text = re.sub(r'[/()]', ' ', clean_text).strip()
 
+        # ถ้าเป็น id/name หรือมีตัวอักษรอังกฤษ → แปลงเป็น upper
         if is_technical_source or re.search(r'[a-zA-Z]', clean_text):
             clean_text = clean_text.upper()
         
+        # เก็บ a-zA-Z, ตัวเลข, ไทย, space, -, _
         clean_text = re.sub(r'[^\u0E00-\u0E7Fa-zA-Z0-9\s\-_]', '', clean_text)
         clean_text = re.sub(r'[\s\-]+', '_', clean_text)
         clean_text = re.sub(r'_{2,}', '_', clean_text)
@@ -147,7 +148,9 @@ class HTMLLocatorParser:
         
         label_clone = BeautifulSoup(str(label_element), 'html.parser')
         
-        for unwanted in label_clone.select('.form-label-small, .required-asterisk, i, strong.text-danger, br'):
+        for unwanted in label_clone.select(
+            '.form-label-small, .required-asterisk, i, strong.text-danger, br'
+        ):
             unwanted.decompose()
         
         main_text = label_clone.get_text(strip=True)
@@ -155,9 +158,12 @@ class HTMLLocatorParser:
     
     def extract_form_fields(self, soup: BeautifulSoup) -> List[LocatorField]:
         """
-        Extract form input fields (input, select, textarea) with XPath locators.
+        Extract form input fields (input, select, textarea, nz-select, nz-date-picker) with XPath locators.
+        - ข้าม checkbox, radio, file
+        - กรณี nz-select: ถ้าใน component เดียวกันมี input ที่พิมพ์ได้ (ไม่ disabled)
+          → ใช้ input แทน ไม่สร้าง nz-select ซ้ำ
         """
-        fields = []
+        fields: List[LocatorField] = []
         container_selectors = [
             'nz-form-item', 'div.form-item', 'div.form-group',
             'div.ant-row', 'div.detail-form', 'div.info-item'
@@ -166,45 +172,102 @@ class HTMLLocatorParser:
         containers = soup.select(', '.join(container_selectors))
         
         for container in containers:
-            controls = container.select('input, select, textarea, nz-select, nz-date-picker')
+            # เตรียม mapping nz-select id -> มี input ให้พิมพ์
+            selectable_ids: Set[str] = set()
+            for nz_sel in container.select('nz-select[id]'):
+                nz_id = nz_sel.get('id', '').strip()
+                if not nz_id:
+                    continue
+                inner_input = nz_sel.select_one(
+                    f'input[id="{nz_id}"]:not([disabled])'
+                )
+                if inner_input:
+                    selectable_ids.add(nz_id)
+
+            controls = container.select(
+                'input, select, textarea, nz-select, nz-date-picker'
+            )
             
             for control in controls:
                 tag_name = control.name.lower()
+                control_type = control.get('type', '').lower()
+
+                # --- Filter out unwanted controls ---
+                if control_type in ['checkbox', 'radio', 'file']:
+                    continue
+
+                # ถ้าเป็น nz-select และมี text input ใช้แทน → ข้าม nz-select
+                if tag_name == 'nz-select':
+                    elem_id = control.get('id', '').strip()
+                    if elem_id and elem_id in selectable_ids:
+                        continue  # เราจะใช้ input แทน
+                # --- END filters ---
+
                 elem_id = control.get('id', '').strip()
                 name = control.get('name', '').strip()
                 form_control_name = control.get('formcontrolname', '').strip()
                 placeholder = control.get('placeholder', '').strip()
                 
-                control_classes = ' '.join(control.get('class', []))
-                if 'ant-select-selection-search-input' in control_classes or control.get('type') == 'file':
-                    continue
-                
-                xpath, name_source_text, is_technical_source, priority = '', '', False, 5
+                xpath = ''
+                name_source_text = ''
+                is_technical_source = False
+                priority = 5
                 
                 is_desc_id = self.is_id_descriptive(elem_id)
-                id_count = len(soup.select(f'{tag_name}[id="{elem_id}"]')) if elem_id else 0
-                name_count = len(soup.select(f'{tag_name}[name="{name}"]')) if name else 0
+                id_count = len(soup.select(f'{tag_name}[id="{elem_id}"]')) \
+                           if elem_id else 0
+                name_count = len(soup.select(f'{tag_name}[name="{name}"]')) \
+                             if name else 0
                 
                 if elem_id and is_desc_id and id_count == 1:
-                    xpath, name_source_text, is_technical_source, priority = f'//{tag_name}[@id="{elem_id}"]', elem_id, True, 1
+                    xpath = f'//{tag_name}[@id="{elem_id}"]'
+                    name_source_text = elem_id
+                    is_technical_source = True
+                    priority = 1
                 elif name and name_count == 1:
-                    xpath, name_source_text, is_technical_source, priority = f'//{tag_name}[@name="{name}"]', name, True, 2
+                    xpath = f'//{tag_name}[@name="{name}"]'
+                    name_source_text = name
+                    is_technical_source = True
+                    priority = 2
                 elif elem_id and is_desc_id and id_count > 1 and placeholder:
-                     xpath, name_source_text, is_technical_source, priority = f'//{tag_name}[@id="{elem_id}" and @placeholder="{placeholder}"]', f'{elem_id}_{placeholder}', True, 3
+                    xpath = (
+                        f'//{tag_name}[@id="{elem_id}" and '
+                        f'@placeholder="{placeholder}"]'
+                    )
+                    name_source_text = f'{elem_id}_{placeholder}'
+                    is_technical_source = True
+                    priority = 3
                 elif form_control_name:
-                    xpath, name_source_text, is_technical_source, priority = f'//{tag_name}[@formcontrolname="{form_control_name}"]', form_control_name, True, 4
+                    xpath = f'//{tag_name}[@formcontrolname="{form_control_name}"]'
+                    name_source_text = form_control_name
+                    is_technical_source = True
+                    priority = 4
                 else:
-                    label = container.select_one('label') or container.find_previous_sibling('label')
+                    label = (
+                        container.select_one('label') or
+                        container.find_previous_sibling('label')
+                    )
                     if label:
                         label_text = self.get_prioritized_label_text(label)
                         if label_text:
-                            xpath, name_source_text, priority = f"//label[normalize-space()='{label_text}']/ancestor::nz-form-item//{tag_name}", label_text, 5
+                            xpath = (
+                                f"//label[normalize-space()='{label_text}']"
+                                f"/ancestor::nz-form-item//{tag_name}"
+                            )
+                            name_source_text = label_text
+                            priority = 5
                 
-                if not xpath and elem_id and id_count == 1: # Fallback to non-descriptive ID
-                    xpath, name_source_text, is_technical_source, priority = f'//{tag_name}[@id="{elem_id}"]', elem_id, True, 6 
+                # Fallback ใช้ id ที่ไม่ descriptive ถ้า unique
+                if not xpath and elem_id and id_count == 1:
+                    xpath = f'//{tag_name}[@id="{elem_id}"]'
+                    name_source_text = elem_id
+                    is_technical_source = True
+                    priority = 6 
                 
                 if xpath:
-                    variable_name = self.create_variable_name(name_source_text, is_technical_source)
+                    variable_name = self.create_variable_name(
+                        name_source_text, is_technical_source
+                    )
                     variable_name = variable_name + self.get_tag_suffix(xpath)
                     
                     if variable_name and variable_name not in self.found_identifiers:
@@ -215,9 +278,10 @@ class HTMLLocatorParser:
 
     def extract_upload_fields(self, soup: BeautifulSoup) -> List[LocatorField]:
         """
-        Extract file upload input fields, often found in custom components like 'upload-section'.
+        Extract file upload input fields, often found in custom components like
+        'upload-section'.
         """
-        fields = []
+        fields: List[LocatorField] = []
         upload_containers = soup.select('div.upload-section')
         
         for container in upload_containers:
@@ -253,8 +317,11 @@ class HTMLLocatorParser:
         """
         Extract display/readonly fields, excluding table headers.
         """
-        fields = []
-        display_selectors = ['div.info-label', 'div.typo-body-lg-bold', 'p.info-label-total-value']
+        fields: List[LocatorField] = []
+        display_selectors = [
+            'div.info-label', 'div.typo-body-lg-bold',
+            'p.info-label-total-value'
+        ]
         
         labels = soup.select(', '.join(display_selectors))
         
@@ -270,57 +337,101 @@ class HTMLLocatorParser:
             
             if value_sibling:
                 value_tag = value_sibling.name
-                value_xpath = f'//{label.name}[normalize-space()="{label_text}"]/following-sibling::{value_tag}[1]'
+                value_xpath = (
+                    f'//{label.name}[normalize-space()="{label_text}"]'
+                    f'/following-sibling::{value_tag}[1]'
+                )
             
             if value_xpath:
-                variable_name_with_suffix = variable_name + self.get_tag_suffix(value_xpath)
+                variable_name_with_suffix = (
+                    variable_name + self.get_tag_suffix(value_xpath)
+                )
                 if variable_name_with_suffix not in self.found_identifiers:
-                    fields.append(LocatorField(variable_name_with_suffix, value_xpath, priority=6))
+                    fields.append(
+                        LocatorField(variable_name_with_suffix,
+                                     value_xpath,
+                                     priority=6)
+                    )
                     self.found_identifiers.add(variable_name_with_suffix)
         
         return fields
     
     def extract_buttons(self, soup: BeautifulSoup) -> List[LocatorField]:
         """
-        Extract button locators with robust text extraction logic.
+        Extract button locators (generic for all buttons).
+        ใช้ id > title > text เป็นหลัก
+        และไม่ผูกการกรองซ้ำกับ self.found_identifiers โดยตรง
         """
-        fields = []
         buttons = soup.select('button')
-        
-        for button in buttons:
-            button_text = self.get_menu_text(button) 
-            variable_name = self.create_variable_name(button_text, is_technical_source=True)
-            
-            if not variable_name or len(button_text) <= 1 or variable_name in self.found_identifiers:
+        candidates: dict[str, LocatorField] = {}
+
+        for idx, button in enumerate(buttons, start=1):
+            elem_id = (button.get('id') or '').strip()
+            title = (button.get('title') or '').strip()
+            text = self.get_menu_text(button) or ''
+
+            # ถ้าไม่มี id / title / text เลย → ข้าม
+            if not elem_id and not title and not text:
                 continue
-            
-            elem_id, name = button.get('id', ''), button.get('name', '')
-            is_desc_id = self.is_id_descriptive(elem_id)
-            
-            if elem_id and is_desc_id:
-                xpath, priority = f"//button[@id='{elem_id}']", 1
-            elif name:
-                xpath, priority = f"//button[@name='{name}']", 2
-            else:
-                xpath, priority = f"//button[normalize-space()='{button_text}']", 3 
-            
-            if not xpath: 
-                 if elem_id:
-                     xpath, priority = f"//button[@id='{elem_id}']", 4
-                 
-            variable_name = variable_name + self.get_tag_suffix(xpath)
-            
-            if variable_name not in self.found_identifiers:
-                fields.append(LocatorField(variable_name, xpath, priority))
-                self.found_identifiers.add(variable_name)
-        
+
+            # ถ้า text มีแค่ 1 ตัวอักษรและไม่มี title → มักเป็นปุ่มไอคอน
+            if (not title) and len(text.strip()) == 1:
+                continue
+
+            # ---- เลือก source สำหรับชื่อแปร ----
+            name_source_text = title or text or elem_id
+
+            variable_name_base = self.create_variable_name(
+                name_source_text,
+                is_technical_source=False
+            )
+            if not variable_name_base and elem_id:
+                variable_name_base = self.create_variable_name(
+                    elem_id,
+                    is_technical_source=True
+                )
+
+            if not variable_name_base:
+                continue
+
+            # ---- เลือก XPath ----
+            xpath = ''
+            priority = 5
+
+            if elem_id:
+                xpath = f"//button[@id='{elem_id}']"
+                priority = 1
+            elif title:
+                xpath = f"//button[@title=\"{title}\"]"
+                priority = 2
+            elif text.strip():
+                xpath = f"//button[normalize-space()='{text.strip()}']"
+                priority = 3
+
+            if not xpath:
+                continue
+
+            variable_name_full = variable_name_base + self.get_tag_suffix(xpath)
+
+            lf = LocatorField(variable_name_full, xpath, priority)
+
+            existing = candidates.get(variable_name_full)
+            if existing is None or lf.priority < existing.priority:
+                candidates[variable_name_full] = lf
+
+        fields: List[LocatorField] = list(candidates.values())
+        for f in fields:
+            self.found_identifiers.add(f.variable)
+
         return fields
+
 
     def extract_tables(self, soup: BeautifulSoup) -> List[LocatorField]:
         """
-        Extract table, thead, and tbody locators, prioritizing XPath by ID > Class > Index.
+        Extract table, thead, and tbody locators, prioritizing XPath by
+        ID > Class > Index.
         """
-        fields = []
+        fields: List[LocatorField] = []
         tables = soup.find_all('table')
         table_index = 1
 
@@ -329,46 +440,61 @@ class HTMLLocatorParser:
             
             prev_header = table.find_previous(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
             if prev_header:
-                base_name = self.create_variable_name(prev_header.get_text(strip=True)) + "_TABLE"
+                base_name = (
+                    self.create_variable_name(
+                        prev_header.get_text(strip=True)
+                    ) + "_TABLE"
+                )
             elif table.get('id') and self.is_id_descriptive(table.get('id')):
-                base_name = self.create_variable_name(table.get('id'), is_technical_source=True)
+                base_name = self.create_variable_name(
+                    table.get('id'), is_technical_source=True
+                )
             else:
                 base_name = f"TABLE_{table_index}"
 
             table_id = table.get('id')
             table_classes = table.get('class', [])
-            significant_classes = ['ant-table-fixed', 'table-bordered', 'dataTable', 'table']
-            found_class = next((cls for cls in significant_classes if cls in table_classes), None)
+            significant_classes = [
+                'ant-table-fixed', 'table-bordered', 'dataTable', 'table'
+            ]
+            found_class = next(
+                (cls for cls in significant_classes if cls in table_classes),
+                None
+            )
 
             if table_id and self.is_id_descriptive(table_id):
                 table_xpath = f"//table[@id='{table_id}']"
             elif found_class:
                 table_xpath = f"//table[contains(@class, '{found_class}')]"
-            elif table_id: # Fallback to non-descriptive ID
-                 table_xpath = f"//table[@id='{table_id}']"
+            elif table_id:  # Fallback to non-descriptive ID
+                table_xpath = f"//table[@id='{table_id}']"
             else:
                 table_xpath = f"(//table)[{table_index}]"
             
             priority = 4
 
             if base_name and base_name not in self.found_identifiers:
-                fields.append(LocatorField(base_name, table_xpath, priority))
+                fields.append(
+                    LocatorField(base_name, table_xpath, priority)
+                )
                 self.found_identifiers.add(base_name)
                 
                 if table.find('thead'):
                     thead_xpath = f"{table_xpath}/thead"
-                    # --- FIX: Changed from _HEADER ---
                     thead_var = f"{base_name}_THEAD"
                     if thead_var not in self.found_identifiers:
-                        fields.append(LocatorField(thead_var, thead_xpath, priority))
+                        fields.append(
+                            LocatorField(thead_var, thead_xpath, priority)
+                        )
                         self.found_identifiers.add(thead_var)
 
                 if table.find('tbody'):
                     tbody_xpath = f"{table_xpath}/tbody"
-                    # --- FIX: Changed from _BODY ---
                     tbody_var = f"{base_name}_TBODY"
                     if tbody_var not in self.found_identifiers:
-                        fields.append(LocatorField(tbody_var, tbody_xpath, priority))
+                        fields.append(
+                            LocatorField(tbody_var, tbody_xpath, priority)
+                        )
                         self.found_identifiers.add(tbody_var)
 
             table_index += 1
@@ -381,7 +507,7 @@ class HTMLLocatorParser:
         Per user request, ALL links found by this function are considered menus
         and will receive the _MENU suffix.
         """
-        fields = []
+        fields: List[LocatorField] = []
         links = soup.select('a.sidebar-link, a.nav-link') 
 
         for link in links:
@@ -389,7 +515,10 @@ class HTMLLocatorParser:
             title = link.get('title', '').strip()
             
             menu_text_span = link.select_one('span.hide-menu')
-            menu_text = menu_text_span.get_text(strip=True) if menu_text_span else ''
+            menu_text = (
+                menu_text_span.get_text(strip=True)
+                if menu_text_span else ''
+            )
 
             if not menu_text: 
                 menu_text = self.get_menu_text(link)
@@ -399,12 +528,13 @@ class HTMLLocatorParser:
             
             is_desc_id = self.is_id_descriptive(elem_id)
             has_text = bool(menu_text)
-            has_unique_title = title and len(soup.select(f"a[title='{title}']")) == 1
+            has_unique_title = title and \
+                len(soup.select(f"a[title='{title}']")) == 1
             
-            # --- CHANGE: is_menu logic removed, as all items here are considered _MENU ---
-            # is_menu = 'has-arrow' in link.get('class', []) 
-            
-            xpath, priority, name_source_text, is_technical_source = '', 5, '', False
+            xpath = ''
+            priority = 5
+            name_source_text = ''
+            is_technical_source = False
 
             if is_desc_id:
                 xpath, priority = f"//a[@id='{elem_id}']", 1
@@ -417,12 +547,18 @@ class HTMLLocatorParser:
             
             elif has_text:
                 if menu_text_span:
-                    xpath, priority = f"//a[.//span[normalize-space()='{menu_text}']]", 3
+                    xpath, priority = (
+                        f"//a[.//span[normalize-space()='{menu_text}']]",
+                        3
+                    )
                 else:
-                    xpath, priority = f"//a[normalize-space()='{menu_text}']", 3
+                    xpath, priority = (
+                        f"//a[normalize-space()='{menu_text}']",
+                        3
+                    )
                 name_source_text = menu_text
             
-            elif elem_id: # Fallback: ID ไม่สื่อความหมาย
+            elif elem_id:  # Fallback: ID ไม่สื่อความหมาย
                 xpath, priority = f"//a[@id='{elem_id}']", 4
                 name_source_text = menu_text if has_text else elem_id
                 is_technical_source = not has_text
@@ -430,11 +566,10 @@ class HTMLLocatorParser:
             if not xpath or not name_source_text:
                 continue
                 
-            variable_name = self.create_variable_name(name_source_text, is_technical_source)
-            
-            # --- CHANGE: Hardcoded suffix to _MENU as requested ---
-            suffix = '_MENU' # Was: '_MENU' if is_menu else '_LINK'
-            variable_name = variable_name + suffix
+            variable_name = self.create_variable_name(
+                name_source_text, is_technical_source
+            )
+            variable_name = variable_name + '_MENU'
             
             if variable_name and variable_name not in self.found_identifiers:
                 fields.append(LocatorField(variable_name, xpath, priority))
@@ -446,44 +581,47 @@ class HTMLLocatorParser:
         """
         Extract Ant Design (ant-menu) <li> items.
         These are direct navigation links.
-        --- CHANGE: Per user request, these are now considered _MENU ---
+        --- CHANGE: considered _MENU ---
         """
-        fields = []
+        fields: List[LocatorField] = []
         menu_items = soup.select('li.ant-menu-item')
 
         for item in menu_items:
             if item.select_one('a.nav-link'):
-                # This <li> is just a wrapper for an <a> tag
-                # which is already handled by extract_menu_links.
                 continue
                 
             router_link = item.get('routerlink', '').strip()
-            # Use get_menu_text to get clean text, e.g., "Name Screening"
             menu_text = self.get_menu_text(item) 
             
             has_text = bool(menu_text)
             has_router_link = bool(router_link)
             
-            xpath, priority, name_source_text, is_technical_source = '', 5, '', False
+            xpath = ''
+            priority = 5
+            name_source_text = ''
+            is_technical_source = False
 
             if has_router_link:
-                xpath, priority = f"//li[@routerlink='{router_link}']", 1
+                xpath, priority = (
+                    f"//li[@routerlink='{router_link}']", 1
+                )
                 name_source_text = menu_text if has_text else router_link
                 is_technical_source = not has_text
             
             elif has_text:
-                # Find <li> that is a menu item and contains the specific clean text
-                xpath = f"//li[contains(@class, 'ant-menu-item') and normalize-space(.)='{menu_text}']"
+                xpath = (
+                    "//li[contains(@class, 'ant-menu-item') and "
+                    f"normalize-space(.)='{menu_text}']"
+                )
                 priority = 3
                 name_source_text = menu_text
             
             if not xpath or not name_source_text:
                 continue
                 
-            variable_name = self.create_variable_name(name_source_text, is_technical_source)
-            
-            # --- THIS IS THE FIX ---
-            # Changed from '_LINK' to '_MENU'
+            variable_name = self.create_variable_name(
+                name_source_text, is_technical_source
+            )
             variable_name = variable_name + '_MENU' 
             
             if variable_name and variable_name not in self.found_identifiers:
@@ -497,8 +635,10 @@ class HTMLLocatorParser:
         Extract Ant Design (ant-menu) <div> titles for collapsible submenus.
         These are expandable menus, so they get _MENU.
         """
-        fields = []
-        submenu_titles = soup.select('li.ant-menu-submenu > div.ant-menu-submenu-title')
+        fields: List[LocatorField] = []
+        submenu_titles = soup.select(
+            'li.ant-menu-submenu > div.ant-menu-submenu-title'
+        )
 
         for title_div in submenu_titles:
             menu_text = self.get_menu_text(title_div)
@@ -506,11 +646,14 @@ class HTMLLocatorParser:
             if not menu_text:
                 continue
             
-            xpath = f"//li[contains(@class, 'ant-menu-submenu')][.//span[normalize-space()='{menu_text}']] /div[contains(@class, 'ant-menu-submenu-title')]"
+            xpath = (
+                "//li[contains(@class, 'ant-menu-submenu')]"
+                f"[.//span[normalize-space()='{menu_text}']]"
+                "/div[contains(@class, 'ant-menu-submenu-title')]"
+            )
             
             priority = 3
             variable_name = self.create_variable_name(menu_text)
-            # --- CHANGE: Hardcode suffix to _MENU ---
             variable_name = variable_name + '_MENU'
             
             if variable_name and variable_name not in self.found_identifiers:
@@ -524,73 +667,218 @@ class HTMLLocatorParser:
         Extract action buttons (a, button) from the *first row* of the *first*
         data table (tbody) on the page.
         """
-        fields = []
-        # ค้นหา tbody แรกในหน้า
+        fields: List[LocatorField] = []
         first_tbody = soup.select_one('table tbody')
         if not first_tbody:
             return []
         
-        # ค้นหาแถวแรก (tr) ใน tbody นั้น
         first_row = first_tbody.select_one('tr:first-child, tr:nth-child(1)')
         if not first_row:
             return []
 
-        # ค้นหา <a> หรือ <button> ที่มี attribute 'title' หรือ 'nz-tooltip'
-        actions = first_row.select('a[title], button[title], a[nz-tooltip], button[nz-tooltip]')
+        actions = first_row.select(
+            'a[title], button[title], a[nz-tooltip], button[nz-tooltip]'
+        )
 
         for action in actions:
-            title = (action.get('title') or action.get('nz-tooltip', '')).strip()
+            title = (
+                action.get('title') or action.get('nz-tooltip', '')
+            ).strip()
             if not title:
                 continue
             
             tag_name = action.name.lower()
-            
-            # ตรวจสอบว่าปุ่มนี้ใช้ attribute ไหน (title หรือ nz-tooltip)
             attr_name = 'title' if action.get('title') else 'nz-tooltip'
-            
-            # สร้าง XPath ที่เจาะจงไปยัง แถวแรก ของ tbody แรก
-            xpath = f"(//tbody)[1]/tr[1]//{tag_name}[@{attr_name}='{title}']"
+            xpath = (
+                f"(//tbody)[1]/tr[1]//{tag_name}[@{attr_name}='{title}']"
+            )
             
             variable_name = self.create_variable_name(title)
             
-            # กำหนด Suffix เอง (ง่ายกว่า)
             if tag_name == 'button':
                 suffix = '_BTN'
-            else: # tag_name == 'a'
+            else:
                 suffix = '_LINK' 
                 
             variable_name += suffix
             
             if variable_name and variable_name not in self.found_identifiers:
-                # ให้ Priority สูง (3)
                 fields.append(LocatorField(variable_name, xpath, priority=3))
                 self.found_identifiers.add(variable_name)
                 
         return fields
 
-    def parse_html(self, html_content: str) -> List[LocatorField]:
+
+    def extract_checkboxes(self, soup: BeautifulSoup) -> List[LocatorField]:
+        """
+        Extract checkboxes using label text (generic for all checkbox types).
+        Works with any checkbox that has an associated label.
+        
+        Strategy: Analyze structure and choose appropriate XPath pattern
+        """
+        fields: List[LocatorField] = []
+        
+        # Find all checkboxes
+        checkboxes = soup.select('input[type="checkbox"]')
+        
+        for checkbox in checkboxes:
+            checkbox_id = checkbox.get('id', '').strip()
+            
+            # Try to find associated label
+            label = None
+            pattern_type = None
+            
+            # Strategy 1: label with 'for' attribute matching checkbox id
+            if checkbox_id:
+                label = soup.select_one(f'label[for="{checkbox_id}"]')
+                if label:
+                    pattern_type = 'for_attr'
+            
+            # Strategy 2: checkbox in label (parent)
+            if not label:
+                label = checkbox.find_parent('label')
+                if label:
+                    pattern_type = 'parent'
+            
+            # Strategy 3: label as next sibling
+            if not label:
+                sibling = checkbox.next_sibling
+                while sibling:
+                    if hasattr(sibling, 'name') and sibling.name == 'label':
+                        label = sibling
+                        pattern_type = 'following_sibling'
+                        break
+                    sibling = sibling.next_sibling
+            
+            # Strategy 4: label as previous sibling
+            if not label:
+                sibling = checkbox.previous_sibling
+                while sibling:
+                    if hasattr(sibling, 'name') and sibling.name == 'label':
+                        label = sibling
+                        pattern_type = 'preceding_sibling'
+                        break
+                    sibling = sibling.previous_sibling
+            
+            if not label:
+                continue
+            
+            # Get clean label text
+            label_text = label.get_text(strip=True)
+            if not label_text:
+                continue
+            
+            # Create variable name from label text
+            variable_name = self.create_variable_name(label_text, is_technical_source=False)
+            
+            if not variable_name or variable_name in self.found_identifiers:
+                continue
+            
+            # Build XPath based on pattern type
+            label_text_escaped = label_text.replace("'", "\\'")
+            
+            if pattern_type == 'parent':
+                # Checkbox inside label
+                xpath = (
+                    f"//label[contains(normalize-space(), '{label_text_escaped}')]"
+                    "//input[@type='checkbox']"
+                )
+            elif pattern_type == 'following_sibling':
+                # Label after checkbox (most reliable with immediate sibling)
+                xpath = (
+                    f"//input[@type='checkbox']"
+                    f"[following-sibling::label[1][contains(normalize-space(), '{label_text_escaped}')]]"
+                )
+            elif pattern_type == 'preceding_sibling':
+                # Label before checkbox
+                xpath = (
+                    f"//label[contains(normalize-space(), '{label_text_escaped}')]"
+                    "/following-sibling::input[@type='checkbox']"
+                )
+            else:
+                # Default: label after checkbox (most common)
+                xpath = (
+                    f"//input[@type='checkbox']"
+                    f"[following-sibling::label[1][contains(normalize-space(), '{label_text_escaped}')]]"
+                )
+            
+            # Add suffix
+            variable_name = variable_name + '_CHECKBOX'
+            
+            if variable_name not in self.found_identifiers:
+                fields.append(LocatorField(variable_name, xpath, priority=2))
+                self.found_identifiers.add(variable_name)
+        
+        return fields
+    
+    def parse_html(self, html_content: str, page_category: str = '') -> List[LocatorField]:
         """
         Main parsing function to extract all locators from HTML.
+        Args:
+            html_content: The HTML string to parse.
+            page_category: Optional prefix category (e.g., 'MAINLIST', 'DETAIL')
+                         to prepend to all locator variables.
         """
         self.found_identifiers.clear()
         soup = BeautifulSoup(html_content, 'html.parser')
         
+        # เรียกใช้ extract methods ทั้งหมด (ใช้โค้ดเดิมของคุณที่มีอยู่แล้ว)
         all_fields = (
-            self.extract_form_fields(soup) +
-            self.extract_upload_fields(soup) +
-            self.extract_display_fields(soup) +
-            self.extract_buttons(soup) +
-            self.extract_tables(soup) +
-            self.extract_menu_links(soup) +
-            self.extract_ant_menu_items(soup) +
-            self.extract_ant_submenu_titles(soup) +
-            self.extract_first_row_actions(soup)  # <--- เพิ่มฟังก์ชันใหม่
+            (self.extract_form_fields(soup) or []) +
+            (self.extract_upload_fields(soup) or []) +
+            (self.extract_display_fields(soup) or []) +
+            (self.extract_buttons(soup) or []) +
+            (self.extract_tables(soup) or []) +
+            (self.extract_menu_links(soup) or []) +
+            (self.extract_ant_menu_items(soup) or []) +
+            (self.extract_ant_submenu_titles(soup) or []) +
+            (self.extract_first_row_actions(soup) or []) +
+            (self.extract_checkboxes(soup) or [])
         )
         
-        all_fields.sort(key=lambda f: f.priority)
-        return all_fields
+        # Post-process: กรอง Priority (Logic เดิม)
+        preferred: dict[str, tuple[int, LocatorField]] = {}
+        suffix_rank = {'_INPUT': 1, '_SELECT': 2}
 
-def generate_robot_framework_variables(fields: List[LocatorField], source_info: str = '') -> str:
+        for f in all_fields:
+            m = re.match(r'^(.*)_(INPUT|SELECT)$', f.variable)
+            if m:
+                base = m.group(1)
+                suf = '_' + m.group(2)
+                key = base
+                rank = suffix_rank.get(suf, 99)
+            else:
+                key = f.variable
+                rank = 99
+
+            if key not in preferred:
+                preferred[key] = (rank, f)
+            else:
+                old_rank, old_field = preferred[key]
+                if rank < old_rank or (rank == old_rank and
+                                       f.priority < old_field.priority):
+                    preferred[key] = (rank, f)
+
+        unique_fields = [t[1] for t in preferred.values()]
+        unique_fields.sort(key=lambda f: f.priority)
+
+        # ✅ LOGIC ใหม่: เติม Page Category Prefix
+        if page_category:
+            # Sanitize category: ตัวพิมพ์ใหญ่, ตัดอักขระพิเศษ
+            clean_category = re.sub(r'[^a-zA-Z0-9_]', '_', page_category).upper().strip('_')
+            
+            if clean_category:
+                for field in unique_fields:
+                    # เติม Prefix: เช่น SAVE_BTN -> MAINLIST_SAVE_BTN
+                    # ผลลัพธ์สุดท้ายใน app.py จะเป็น LOCATOR_MAINLIST_SAVE_BTN
+                    field.variable = f"{clean_category}_{field.variable}"
+
+        return unique_fields
+
+
+def generate_robot_framework_variables(
+    fields: List[LocatorField], source_info: str = ''
+) -> str:
     """
     Generate a formatted Robot Framework variables section string.
     """
@@ -618,44 +906,3 @@ def generate_robot_framework_variables(fields: List[LocatorField], source_info: 
         lines.append(line)
     
     return '\n'.join(lines)
-
-# Example usage
-if __name__ == '__main__':
-    # --- ใส่ HTML ของคุณที่นี่เพื่อทดสอบ (ตัวอย่าง Sidebar-item) ---
-    html_content = """
-    <div _ngcontent-ng-c1458965376="" class="simplebar-content"><ul _ngcontent-ng-c1458965376="" id="sidebarnav"><li _ngcontent-ng-c1458965376="" class="sidebar-item"><a _ngcontent-ng-c1458965376="" target="_self" aria-expanded="false" class="sidebar-link has-arrow active" title="Configuration" href="#/mainmenu/companytype"><span _ngcontent-ng-c1458965376="" class="d-flex"><i _ngcontent-ng-c1458965376="" class="fa-cogs ti"></i></span><span _ngcontent-ng-c1458965376="" class="hide-menu">Configuration</span></a><ul _ngcontent-ng-c1458965376="" aria-expanded="false" class="collapse first-level in"><li _ngcontent-ng-c1458965376="" class="sidebar-item"><a _ngcontent-ng-c1458965376="" class="sidebar-link active" title="Company Type Management" id="sidebar-sub-menu-10" href="#/mainmenu/companytype"><div _ngcontent-ng-c1458965376="" class="round-16 d-flex align-items-center justify-content-center"><i _ngcontent-ng-c1458965376="" class="ti"></i></div><span _ngcontent-ng-c1458965376="" class="hide-menu text-wrap">Company Type Management</span></a></li><li _ngcontent-ng-c1458965376="" class="sidebar-item"><a _ngcontent-ng-c1458965376="" class="sidebar-link" title="Company Management" id="sidebar-sub-menu-4" href="#/mainmenu/company"><div _ngcontent-ng-c1458965376="" class="round-16 d-flex align-items-center justify-content-center"><i _ngcontent-ng-c1458965376="" class="ti"></i></div><span _ngcontent-ng-c1458965376="" class="hide-menu text-wrap">Company Management</span></a></li><li _ngcontent-ng-c1458965376="" class="sidebar-item"><a _ngcontent-ng-c1458965376="" class="sidebar-link" title="Group Management" id="sidebar-sub-menu-3" href="#/mainmenu/group"><div _ngcontent-ng-c1458965376="" class="round-16 d-flex align-items-center justify-content-center"><i _ngcontent-ng-c1458965376="" class="ti"></i></div><span _ngcontent-ng-c1458965376="" class="hide-menu text-wrap">Group Management</span></a></li><li _ngcontent-ng-c1458965376="" class.sidebar-item"><a _ngcontent-ng-c1458965376="" class="sidebar-link" title="User Management" id="sidebar-sub-menu-2" href="#/mainmenu/user"><div _ngcontent-ng-c1458965376="" class="round-16 d-flex align-items-center justify-content-center"><i _ngcontent-ng-c1458965376="" class="ti"></i></div><span _ngcontent-ng-c1type_management-menu text-wrap">User Management</span></a></li><li _ngcontent-ng-c1458965376="" class="sidebar-item"><a _ngcontent-ng-c1458965376="" class="sidebar-link" title="Role Management" id="sidebar-sub-menu-5" href="#/mainmenu/role"><div _ngcontent-ng-c1458965376="" class="round-16 d-flex align-items-center justify-content-center"><i _ngcontent-ng-c1458965376="" class="ti"></i></div><span _ngcontent-ng-c1458965376="" class="hide-menu text-wrap">Role Management</span></a></li><li _ngcontent-ng-c1458965376="" class="sidebar-item"><a _ngcontent-ng-c1458965376="" class="sidebar-link" title="Permission Management" id="sidebar-sub-menu-6" href="#/mainmenu/permission"><div _ngcontent-ng-c1458965376="" class="round-16 d-flex align-items-center justify-content-center"><i _ngcontent-ng-c1458965376="" class="ti"></i></div><span _ngcontent-ng-c1458965376="" class="hide-menu text-wrap">Permission Management</span></a></li><li _ngcontent-ng-c1458965376="" class="sidebar-item"><a _ngcontent-ng-c1458965376="" class="sidebar-link" title="Menu Management" id="sidebar-sub-menu-7" href="#/mainmenu/menu"><div _ngcontent-ng-c1458965376="" class="round-16 d-flex align-items-center justify-content-center"><i _ngcontent-ng-c1458965376="" class="ti"></i></div><span _ngcontent-ng-c1458965376="" class="hide-menu text-wrap">Menu Management</span></a></li></ul></li><li _ngcontent-ng-c1458965376="" class="sidebar-item"><a _ngcontent-ng-c1458965376="" target="_self" aria-expanded="false" class="sidebar-link" title="Register Management" id="sidebar-menu-8" href="#/mainmenu/register/approve"><span _ngcontent-ng-c1458965376=""><i _ngcontent-ng-c1A458965376="" class="fa-registered ti"></i></span><span _ngcontent-ng-c1458965376="" class.hide-menu">Register Management</span></a></li></ul></div>
-    
-    <table>
-        <thead>...</thead>
-        <tbody>
-            <tr>
-                <td>Data 1-1</td>
-                <td>Data 1-2</td>
-                <td>
-                    <a href="#" title="Edit">Edit</a>
-                    <button nz-tooltip="Delete">Delete</button>
-                </td>
-            </tr>
-            <tr>
-                <td>Data 2-1</td>
-                <td>Data 2-2</td>
-                <td>
-                    <a href="#" title="Edit">Edit</a>
-                    <button nz-tooltip="Delete">Delete</button>
-                </td>
-            </tr>
-        </tbody>
-    </table>
-    """
-    # -------------------------------------
-
-    if html_content:
-        parser = HTMLLocatorParser()
-        fields = parser.parse_html(html_content)
-        
-        print(f'\n--- Running with ALL fixes ---')
-        print(f'Found {len(fields)} locators:')
-        for field in fields:
-            print(f'  Priority {field.priority}: ${{LOCATOR_{field.variable}}} -> {field.xpath}')
-        
-        print('\n' + generate_robot_framework_variables(fields, 'Test All Fixes'))

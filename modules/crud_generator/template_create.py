@@ -1,6 +1,7 @@
 """
 Create Template Generator
 Generates a complete CRUD Create test flow template
+(MODIFIED: Separated action_form and 5 verify sections)
 """
 import uuid
 from .template_common import find_keyword, find_locator, create_step, get_form_locators
@@ -18,16 +19,22 @@ def generate_create_template(ws, all_keywords, all_locators):
     Returns:
         Dictionary of steps organized by section
     """
+    # --- (MODIFIED) Updated steps structure ---
     steps = {
         'suite_setup': [],
         'test_setup': [],
         'action_list': [],
+        'action_form': [],      # <-- Added
         'action_detail': [],
-        'verify_list': [],
-        'verify_detail': [],
+        'verify_list_search': [], # <-- Replaced verify_list
+        'verify_list_table': [],  # <-- Replaced verify_list
+        'verify_list_nav': [],    # <-- Replaced verify_list
+        'verify_detail_page': [], # <-- Replaced verify_detail
+        'verify_detail_back': [], # <-- Replaced verify_detail
         'test_teardown': [],
         'suite_teardown': []
     }
+    # --- (End Modification) ---
     
     # 1. Generate Suite Setup
     steps['suite_setup'] = _generate_suite_setup(all_keywords)
@@ -36,13 +43,22 @@ def generate_create_template(ws, all_keywords, all_locators):
     steps['action_list'] = _generate_action_list_create(all_keywords, all_locators)
     
     # 3. Generate Action Detail (Fill form + Save)
+    # (Form steps go to 'action_form' manually, Save/Modal go to 'action_detail')
     steps['action_detail'] = _generate_action_detail_create(all_keywords, all_locators, ws)
     
-    # 4. Generate Verify List
-    steps['verify_list'] = _generate_verify_list_create(all_keywords, all_locators, ws)
+    # --- (MODIFIED) Split Verify List steps ---
+    # 4. Generate Verify List (Returns a dict with 3 keys)
+    verify_list_steps = _generate_verify_list_create(all_keywords, all_locators, ws)
+    steps['verify_list_search'] = verify_list_steps['search']
+    steps['verify_list_table'] = verify_list_steps['table']
+    steps['verify_list_nav'] = verify_list_steps['nav']
     
-    # 5. Generate Verify Detail
-    steps['verify_detail'] = _generate_verify_detail_create(all_keywords, ws)
+    # 5. Generate Verify Detail (Returns a dict with 2 keys)
+    # (MODIFIED) Pass all_locators to fix bug
+    verify_detail_steps = _generate_verify_detail_create(all_keywords, all_locators, ws) 
+    steps['verify_detail_page'] = verify_detail_steps['page']
+    steps['verify_detail_back'] = verify_detail_steps['back']
+    # --- (End Modification) ---
     
     # 6. Generate Suite Teardown
     steps['suite_teardown'] = _generate_suite_teardown(all_keywords)
@@ -63,16 +79,16 @@ def _generate_suite_setup(all_keywords):
     kw = find_keyword(all_keywords, 'Login System')
     if kw:
         steps.append(create_step(kw['name'], {
-            'headeruser': '${USER_ADMIN}',
-            'headerpassword': '${PASSWORD_ADMIN}'
+            'username': '${USER_ADMIN}',
+            'password': '${PASSWORD_ADMIN}'
         }))
     
     # 3. Navigate to menu
     kw = find_keyword(all_keywords, 'Go to SUBMENU name')
     if kw:
         steps.append(create_step(kw['name'], {
-            'menuname': 'MENU_NAME',
-            'submenuname': 'SUB_MENU_NAME'
+            'main_menu': 'MENU_NAME',
+            'submenu': 'SUB_MENU_NAME'
         }))
     
     # 4. Verify page name
@@ -93,41 +109,27 @@ def _generate_action_list_create(all_keywords, all_locators):
     if kw:
         loc = find_locator(all_locators, ['NEW', 'ADD', 'CREATE_BTN'])
         steps.append(create_step(kw['name'], {
-            'locator': loc['name'] if loc else 'LOCATOR_CREATE_BTN'
+            'locator_field': loc['name'] if loc else 'LOCATOR_CREATE_BTN'
         }))
     
     return steps
 
 
 def _generate_action_detail_create(all_keywords, all_locators, ws):
-    """Generate Action Detail steps (Fill form + Save + Modal)"""
+    """Generate Action Detail steps (Save + Modal only, form filling is manual)"""
     steps = []
     
-    # 1. Fill form fields
-    kw_fill = find_keyword(all_keywords, 'Fill in data form')
-    if kw_fill:
-        form_locators = get_form_locators(all_locators)
-        
-        for locator_obj in form_locators:
-            steps.append(create_step(kw_fill['name'], {
-                "locator_field": locator_obj,
-                "value": "",
-                "select_attribute": "label",
-                "is_checkbox_type": False,
-                "is_ant_design": False,
-                "is_switch_type": False,
-                "locator_switch_checked": ""
-            }))
+    # User will manually add fill steps via UI (into 'action_form' list)
     
-    # 2. Click Save button
+    # 1. Click Save button
     kw_click = find_keyword(all_keywords, 'Click button on detail page')
     if kw_click:
         loc_save = find_locator(all_locators, ['SAVE', 'SUBMIT', 'CONFIRM'])
         steps.append(create_step(kw_click['name'], {
-            'locator': loc_save['name'] if loc_save else 'LOCATOR_SAVE_BTN'
+            'locator_field': loc_save['name'] if loc_save else 'LOCATOR_SAVE_BTN'
         }))
     
-    # 3. Click Modal OK
+    # 2. Click Modal OK
     kw_modal = find_keyword(all_keywords, 'Click Modal Button')
     if kw_modal:
         steps.append(create_step(kw_modal['name'], {
@@ -137,15 +139,20 @@ def _generate_action_detail_create(all_keywords, all_locators, ws):
     return steps
 
 
+# --- (MODIFIED) Function returns a dict of lists ---
 def _generate_verify_list_create(all_keywords, all_locators, ws):
-    """Generate Verify List steps (Search + Verify table + View)"""
-    steps = []
+    """Generate Verify List steps (Search + Wait + Verify table + View)"""
+    steps = {
+        'search': [],
+        'table': [],
+        'nav': []
+    }
     
     # 1. Fill search field
     kw_search = find_keyword(all_keywords, 'Fill in search field')
     if kw_search:
-        # Try to get value from first fill step
-        fill_steps = ws.get('steps', {}).get('action_detail', [])
+        # Try to get value from first fill step (This logic is complex, keep as is)
+        fill_steps = ws.get('steps', {}).get('action_form', []) # (MODIFIED) Check 'action_form'
         search_value = "${EMPTY}"
         if fill_steps:
             first_fill = next((s for s in fill_steps if s['keyword'] == 'Fill in data form'), None)
@@ -153,75 +160,71 @@ def _generate_verify_list_create(all_keywords, all_locators, ws):
                 search_value = first_fill['args']['value']
         
         loc_search = find_locator(all_locators, ['SEARCH', 'FILTER'])
-        steps.append(create_step(kw_search['name'], {
+        # (MODIFIED) Append to 'search' list
+        steps['search'].append(create_step(kw_search['name'], {
             'locator_field': loc_search if loc_search else {'name': 'LOCATOR_SEARCH_INPUT'},
-            'value': search_value
+            'keyword': search_value
         }))
     
     # 2. Click Search button
     kw_click = find_keyword(all_keywords, 'Click button on list page')
     if kw_click:
         loc_search_btn = find_locator(all_locators, ['SEARCH_BTN', 'SEARCH_BUTTON'])
-        steps.append(create_step(kw_click['name'], {
-            'locator': loc_search_btn['name'] if loc_search_btn else 'LOCATOR_SEARCH_BTN'
+        # (MODIFIED) Append to 'search' list
+        steps['search'].append(create_step(kw_click['name'], {
+            'locator_field': loc_search_btn['name'] if loc_search_btn else 'LOCATOR_SEARCH_BTN'
         }))
     
-    # 3. Verify Result of data table
+    # 3. Wait Loading Progress (Added in step 3.1)
+    kw_wait = find_keyword(all_keywords, 'Wait Loading progress')
+    if kw_wait:
+        # (MODIFIED) Append to 'search' list
+        steps['search'].append(create_step(kw_wait['name'], {}))
+    
+    # 4. Verify Result of data table
     kw_verify_table = find_keyword(all_keywords, 'Verify Result of data table')
     if kw_verify_table:
-        steps.append(create_step(kw_verify_table['name'], {
-            'theader': 'LOCATOR_TABLE_HEADER',
-            'tbody': 'LOCATOR_TABLE_BODY',
+        # (MODIFIED) Append to 'table' list
+        steps['table'].append(create_step(kw_verify_table['name'], {
+            'locator_thead': 'LOCATOR_TABLE_HEADER',
+            'locator_tbody': 'LOCATOR_TABLE_BODY',
             'rowdata': '1',
-            'ignore_case': '${True}',
+            'ignorcase': 'True',
             'assertion_columns': []
         }))
     
-    # 4. Click View/Edit button
+    # 5. Click View/Edit button
     if kw_click:
         loc_view = find_locator(all_locators, ['VIEW_BTN', 'EDIT_BTN'])
-        steps.append(create_step(kw_click['name'], {
+        # (MODIFIED) Append to 'nav' list
+        steps['nav'].append(create_step(kw_click['name'], {
             'locator': loc_view['name'] if loc_view else 'LOCATOR_VIEW_BTN'
         }))
     
-    return steps
+    return steps # <-- Return dict
 
 
-def _generate_verify_detail_create(all_keywords, ws):
-    """Generate Verify Detail steps (Verify form fields + Back)"""
-    steps = []
+# --- (MODIFIED) Function returns a dict, accepts all_locators ---
+def _generate_verify_detail_create(all_keywords, all_locators, ws):
+    """Generate Verify Detail steps (Back button only, verification is manual)"""
+    steps = {
+        'page': [], # <-- For manual verify steps
+        'back': []  # <-- For back button
+    }
     
-    kw_verify = find_keyword(all_keywords, 'Verify data form')
-    if not kw_verify:
-        return steps
-    
-    # Get fill steps to create corresponding verify steps
-    fill_steps = ws.get('steps', {}).get('action_detail', [])
-    fill_steps = [s for s in fill_steps if s['keyword'] == 'Fill in data form']
-    
-    for fill_step in fill_steps:
-        locator_field = fill_step.get('args', {}).get('locator_field')
-        value = fill_step.get('args', {}).get('value')
-        is_checkbox = fill_step.get('args', {}).get('is_checkbox_type', False)
-        is_switch = fill_step.get('args', {}).get('is_switch_type', False)
-        
-        # Only verify text/select fields
-        if locator_field and value and not is_checkbox and not is_switch:
-            steps.append(create_step(kw_verify['name'], {
-                "locator_field": locator_field,
-                "expected_value": value,
-                "select_attribute": "label"
-            }))
+    # User will manually add verify steps via UI (into 'page' list)
     
     # Click Back button
     kw_click = find_keyword(all_keywords, 'Click button on detail page')
     if kw_click:
-        loc_back = find_locator(all_keywords, ['BACK_BTN', 'BACK_BUTTON'])
-        steps.append(create_step(kw_click['name'], {
-            'locator': loc_back['name'] if loc_back else 'LOCATOR_BACK_BTN'
+        # (MODIFIED) Use all_locators to find the button
+        loc_back = find_locator(all_locators, ['BACK_BTN', 'BACK_BUTTON'])
+        # (MODIFIED) Append to 'back' list
+        steps['back'].append(create_step(kw_click['name'], {
+            'locator_field': loc_back['name'] if loc_back else 'LOCATOR_BACK_BTN'
         }))
     
-    return steps
+    return steps # <-- Return dict
 
 
 def _generate_suite_teardown(all_keywords):

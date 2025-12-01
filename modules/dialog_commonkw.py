@@ -21,15 +21,27 @@ def inject_add_dialog_css():
             font-family: 'Inter', sans-serif; 
         }
         
+        /* ✅ FIX: เร่ง Dialog Animation */
+        div[data-testid="stDialog"] {
+            animation: fadeIn 0.15s ease-in !important;  /* เร็วขึ้นจาก 0.3s */
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.98); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        
         /* Dialog container adjustments */
         div[data-testid="stDialog"] > div > div[data-testid="stVerticalBlock"] > div:first-child {
             padding-top: 0.5rem !important;
         }
         
-        /* Dialog background - Semi-transparent to show background */
+        /* ✅ FIX: ลด blur effect เพื่อความเร็ว */
         div[data-testid="stDialog"] > div {
-            background-color: rgba(28, 33, 40, 0.75) !important;
-            backdrop-filter: blur(10px);
+            background-color: rgba(15, 23, 42, 0.40) !important;  /* สีน้ำเงินเข้ม + โปร่ง */
+            backdrop-filter: blur(8px) saturate(1.2) !important;  /* Blur + เพิ่มสีสัน */
+            border: 1px solid rgba(255, 255, 255, 0.1) !important; /* ขอบโปร่งใส */
+            transition: opacity 0.1s ease-in !important;  /* เร็วขึ้น */
         }
         
         /* Back button styling */
@@ -51,6 +63,9 @@ def inject_add_dialog_css():
                 0 8px 24px rgba(0, 0, 0, 0.4),
                 inset 0 1px 0 rgba(255, 255, 255, 0.05);
             position: relative;
+            /* ✅ เพิ่ม GPU acceleration */
+            will-change: transform;
+            transform: translateZ(0);
         }
         
         .keyword-column::before {
@@ -76,6 +91,9 @@ def inject_add_dialog_css():
                 0 8px 24px rgba(0, 0, 0, 0.4),
                 inset 0 1px 0 rgba(255, 255, 255, 0.05);
             position: relative;
+            /* ✅ เพิ่ม GPU acceleration */
+            will-change: transform;
+            transform: translateZ(0);
         }
         
         .config-column::before {
@@ -88,7 +106,7 @@ def inject_add_dialog_css():
             background: linear-gradient(90deg, transparent, rgba(118, 131, 144, 0.3), transparent);
         }
         
-        /* Search box enhancement - Lighter background */
+        /* ✅ ปรับ Search box ให้ render เร็วขึ้น */
         div[data-testid="stDialog"] .stTextInput > div > div > input {
             background-color: #2d333b !important;
             border: 1px solid #444c56 !important;
@@ -96,12 +114,12 @@ def inject_add_dialog_css():
             padding: 0.65rem 1rem !important;
             font-size: 0.95rem !important;
             color: #adbac7 !important;
-            transition: all 0.2s ease-in-out !important;
+            transition: border-color 0.15s ease-in !important;  /* ลด transition time */
         }
         
         div[data-testid="stDialog"] .stTextInput > div > div > input:focus {
             border-color: #539bf5 !important;
-            box-shadow: 0 0 0 3px rgba(83, 155, 245, 0.15) !important;
+            box-shadow: 0 0 0 2px rgba(83, 155, 245, 0.15) !important;  /* ลด shadow */
             background-color: #22272e !important;
         }
         
@@ -109,7 +127,7 @@ def inject_add_dialog_css():
             color: #768390 !important;
         }
         
-        /* Expander improvements - Better contrast */
+        /* ✅ ปรับ Expander ให้ render เร็วขึ้น */
         div[data-testid="stDialog"] [data-testid="stExpander"] {
             background-color: transparent !important;
             border: none !important;
@@ -121,7 +139,7 @@ def inject_add_dialog_css():
             border: 1px solid #444c56 !important;
             border-radius: 6px !important;
             padding: 0.7rem 1rem !important;
-            transition: all 0.2s ease-in-out;
+            transition: background-color 0.15s ease-in !important;  /* ลด transition */
             color: #adbac7 !important;
         }
         
@@ -130,17 +148,7 @@ def inject_add_dialog_css():
             border-color: #539bf5 !important;
         }
         
-        div[data-testid="stDialog"] [data-testid="stExpander"][open] > div:first-child {
-            background-color: #373e47 !important;
-            border-color: #539bf5 !important;
-            box-shadow: 0 0 0 1px #539bf5;
-        }
-        
-        /* Keyword button enhancements - Better visibility */
-        div[data-testid="stDialog"] div[data-testid="stButton"] { 
-            margin: 4px 0; 
-        }
-        
+        /* ✅ ปรับ Button animation ให้เร็วขึ้น */
         div[data-testid="stDialog"] div[data-testid="stButton"] > button[kind="secondary"] {
             display: flex;
             align-items: center;
@@ -154,169 +162,19 @@ def inject_add_dialog_css():
             font-weight: 500;
             font-size: 0.92rem;
             text-align: left;
-            transition: all 0.2s ease-in-out;
+            transition: all 0.1s ease-in !important;  /* ลดจาก 0.2s */
         }
         
         div[data-testid="stDialog"] div[data-testid="stButton"] > button[kind="secondary"]:hover {
             border-color: #539bf5;
             background-color: #373e47;
             color: #cdd9e5;
-            transform: translateX(4px);
+            transform: translateX(2px);  /* ลดจาก 4px */
         }
         
-        div[data-testid="stDialog"] div[data-testid="stButton"] > button:focus:not(:active) {
-            border-color: #539bf5 !important;
-            box-shadow: 0 0 0 3px rgba(83, 155, 245, 0.15) !important;
-        }
-        
-        div[data-testid="stDialog"] .stButton button.active-keyword {
-            background-color: #316dca;
-            border-color: #539bf5;
-            color: #ffffff;
-            font-weight: 600;
-            box-shadow: 0 0 0 1px #539bf5, 0 4px 16px rgba(83, 155, 245, 0.3);
-            transform: translateX(4px);
-        }
-        
-        /* Section headers - Better contrast */
-        .section-header {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-size: 1rem;
-            font-weight: 600;
-            color: #adbac7;
-            margin-bottom: 1rem;
-            padding-bottom: 0.75rem;
-            border-bottom: 2px solid #373e47;
-        }
-        
-        .section-header-icon {
-            font-size: 1.25rem;
-        }
-        
-        /* Keyword info box - Enhanced visibility */
-        .keyword-info {
-            background-color: #2d333b;
-            border: 1px solid #444c56;
-            border-radius: 6px;
-            padding: 1.25rem;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-        
-        .keyword-info-title {
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: #539bf5;
-            margin-bottom: 0.75rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .keyword-info-title::before {
-            content: "⚙️";
-            font-size: 1.25rem;
-        }
-        
-        .keyword-info-doc {
-            color: #768390;
-            line-height: 1.6;
-            font-size: 0.9rem;
-        }
-        
-        /* Empty state styling - GitHub Dark style */
-        .empty-state {
-            text-align: center;
-            padding: 3rem 1.5rem;
-            color: #8b949e;
-        }
-        
-        .empty-state-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-            opacity: 0.4;
-        }
-        
-        .empty-state-text {
-            font-size: 1rem;
-            font-weight: 500;
-            color: #8b949e;
-        }
-        
-        /* Primary button enhancement - GitHub style */
-        div[data-testid="stDialog"] button[type="primary"] {
-            background-color: #238636 !important;
-            border: 1px solid rgba(240, 246, 252, 0.1) !important;
-            padding: 0.85rem 1.5rem !important;
-            font-weight: 600 !important;
-            font-size: 1rem !important;
-            border-radius: 6px !important;
-            color: #ffffff !important;
-            box-shadow: 0 0 transparent, 0 0 transparent, 0 1px 0 rgba(27, 31, 36, 0.04) !important;
-            transition: all 0.2s ease-in-out !important;
-        }
-        
-        div[data-testid="stDialog"] button[type="primary"]:hover {
-            background-color: #2ea043 !important;
-            border-color: rgba(240, 246, 252, 0.1) !important;
-            box-shadow: 0 0 transparent, 0 0 transparent, 0 1px 0 rgba(27, 31, 36, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
-        }
-        
-        /* Scrollbar styling - Better visibility */
-        .keyword-column::-webkit-scrollbar,
-        .config-column::-webkit-scrollbar {
-            width: 10px;
-        }
-        
-        .keyword-column::-webkit-scrollbar-track,
-        .config-column::-webkit-scrollbar-track {
-            background: #1c2128;
-            border-radius: 5px;
-        }
-        
-        .keyword-column::-webkit-scrollbar-thumb,
-        .config-column::-webkit-scrollbar-thumb {
-            background-color: #444c56;
-            border: 2px solid #22272e;
-            border-radius: 6px;
-        }
-        
-        .keyword-column::-webkit-scrollbar-thumb:hover,
-        .config-column::-webkit-scrollbar-thumb:hover {
-            background-color: #545d68;
-        }
-        
-        /* Category badge - Better contrast */
-        .category-badge {
-            display: inline-block;
-            background-color: #373e47;
-            color: #768390;
-            border: 1px solid #444c56;
-            padding: 0.2rem 0.6rem;
-            border-radius: 12px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            margin-left: 0.5rem;
-        }
-        
-        /* Reduce spacing */
-        div[data-testid="stDialog"] [data-testid="stVerticalBlock"] { 
-            gap: 0.25rem; 
-        }
-        
-        div[data-testid="stDialog"] h3 { 
-            margin-bottom: 0.5rem; 
-        }
-        
-        div[data-testid="stDialog"] h5 { 
-            margin-top: 0.5rem; 
-            margin-bottom: 0.3rem; 
-        }
-        
-        div[data-testid="stDialog"] .stDivider { 
-            margin: 0.5rem 0; 
+        /* ✅ ซ่อน animation ที่ไม่จำเป็น */
+        * {
+            -webkit-tap-highlight-color: transparent;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -358,7 +216,7 @@ def _render_keyword_row(kw, key_prefix, selected_kw_state_key, recently_used_lis
 
 
 # --- Main Dialog Function ---
-@st.dialog("Add New Step", width="large")
+@st.dialog("Add New Step", width="large", dismissible=False)
 def render_add_step_dialog_base(
     dialog_state_key: str,
     context_state_key: str,
@@ -391,8 +249,27 @@ def render_add_step_dialog_base(
     all_keywords_list = ws_state.get('keywords', [])
     if all_keywords_list and 'categorized_keywords' not in ws_state:
         ws_state['categorized_keywords'] = categorize_keywords(all_keywords_list)
-    categorized_keywords = ws_state.get('categorized_keywords', {})
-    keyword_map = {kw['name']: kw for kw in all_keywords_list}
+   
+    # --- START: Manually inject Control Flow Keywords ---
+    # (This ensures they *always* exist for any dialog that uses this base)
+    categorized_keywords = ws_state.get('categorized_keywords', {}) # <-- นี่คือบรรทัดที่ 1 ที่มาแทนที่
+    
+    control_flow_kws = [
+        {'name': 'IF Condition', 'args': [{'name': '${condition}', 'default': ''}], 'doc': 'Starts a conditional block.'},
+        {'name': 'ELSE IF Condition', 'args': [{'name': '${condition}', 'default': ''}], 'doc': 'Starts an else-if block.'},
+        {'name': 'ELSE', 'args': [], 'doc': 'Starts an else block.'},
+        {'name': 'END', 'args': [], 'doc': 'Ends a conditional block.'}
+    ]
+    
+    # Add them to the dictionary under a new category
+    categorized_keywords['Control Flow'] = control_flow_kws
+    
+    # We also need to update the keyword_map so they can be "selected"
+    keyword_map = {kw['name']: kw for kw in all_keywords_list} # <-- นี่คือบรรทัดที่ 2 ที่มาแทนที่
+    for kw in control_flow_kws:
+        if kw['name'] not in keyword_map:
+            keyword_map[kw['name']] = kw
+    # --- END: Manually inject Control Flow Keywords ---
     
     if selected_kw_state_key not in st.session_state: 
         st.session_state[selected_kw_state_key] = None
@@ -443,7 +320,7 @@ def render_add_step_dialog_base(
 
     # --- Back Button ---
     with st.container():
-        if st.button("← Back to Workspace", key=f"back_{dialog_state_key}"):
+        if st.button("← Back to Workspace", key=f"back_{dialog_state_key}", type="primary"):
             close_dialog_and_cleanup()
     
     st.markdown("<div style='margin-bottom: 1rem;'></div>", unsafe_allow_html=True)
@@ -506,15 +383,17 @@ def render_add_step_dialog_base(
         selected_kw = st.session_state.get(selected_kw_state_key)
 
         if selected_kw:
-            st.markdown('<div class="section-header"><span class="section-header-icon">⚙️</span>Configure Arguments</div>', unsafe_allow_html=True)
-            
-            doc_text = selected_kw.get('doc', 'No documentation available.')
-            st.markdown(f"""
-                <div class='keyword-info'>
-                    <div class='keyword-info-title'>{selected_kw['name']}</div>
-                    <div class='keyword-info-doc'>{doc_text}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                "<div style='font-size: 25px; font-weight: 600; margin-bottom: 0.5rem;'>⚙️ Configure Arguments</div>", 
+                unsafe_allow_html=True
+            )
+    
+            with st.container(border=True):
+                st.markdown(
+                    f"<span style='color: #1E90FF; font-weight: 600; font-size: 18px;'>{selected_kw['name']}</span>", 
+                    unsafe_allow_html=True
+                )
+                st.caption(selected_kw.get('doc', 'No documentation available.'))
 
             # --- Special Handling for Verify Result ---
             if selected_kw['name'].strip() == 'Verify Result of data table':
@@ -534,7 +413,8 @@ def render_add_step_dialog_base(
                     csv_keywords = extract_csv_datasource_keywords(ws_state)
                     
                     if csv_keywords and selected_kw and selected_kw.get('args'):
-                        col_ds, col_row, col_column, col_target = st.columns([2, 1.5, 1.5, 2])
+                        # ✅ แถว 1: Data Source + Data Test
+                        col_ds, col_test = st.columns([1, 1])
                         
                         with col_ds:
                             quick_ds = st.selectbox(
@@ -544,12 +424,31 @@ def render_add_step_dialog_base(
                             )
                         
                         quick_row_val = ""
-                        with col_row:
-                            quick_row_val = st.text_input(
-                                "Row Key",
-                                key=f"quick_csv_row_{dialog_state_key}",
-                                placeholder="e.g., robotapi"
-                            )
+                        with col_test:
+                            # ✅ ดึงข้อมูลจากคอลัมน์แรกของ CSV
+                            from modules.utils import util_get_csv_first_column_values
+                            first_col_options = []
+                            if quick_ds:
+                                ds_info = csv_keywords.get(quick_ds, {})
+                                csv_filename = ds_info.get('csv_filename', '')
+                                project_path = st.session_state.get('project_path', '')
+                                first_col_options = util_get_csv_first_column_values(project_path, csv_filename)
+                            
+                            if first_col_options:
+                                quick_row_val = st.selectbox(
+                                    "Row Data Key",
+                                    options=first_col_options,
+                                    key=f"quick_csv_row_{dialog_state_key}"
+                                )
+                            else:
+                                quick_row_val = st.text_input(
+                                    "Row Data Key",
+                                    key=f"quick_csv_row_{dialog_state_key}",
+                                    placeholder="e.g., robotapi"
+                                )
+                        
+                        # ✅ แถว 2: Column + Insert to →
+                        col_column, col_target = st.columns([1, 1])
                         
                         quick_col = None
                         headers = []
@@ -605,7 +504,7 @@ def render_add_step_dialog_base(
                                 if not target_arg:
                                     st.warning("Please select a target argument 'Insert to →'")
                                 elif not quick_row_val:
-                                    st.warning("Please enter a 'Row Key'")
+                                    st.warning("Please enter a 'Data Test'")
                                 elif insert_syntax:
                                     # ✅ Insert ค่าลง session_state
                                     kw_name_clean = selected_kw['name'].replace(' ', '_').replace('/', '_').replace('(', '').replace(')', '')
@@ -622,162 +521,175 @@ def render_add_step_dialog_base(
                 
                 st.markdown("---")
                 
-                # === Main Form - ใช้ Stable Key เท่านั้น ===
+                # === Main Form - แก้ไข: ลบ st.form ออกเพื่อให้ Dropdown ทำงานโต้ตอบกันได้ ===
                 kw_name_safe = selected_kw['name'].replace(' ', '_').replace('/', '_').replace('(', '').replace(')', '')
-                form_key = f"step_form_{dialog_state_key}_{kw_name_safe}"
+                # ลบบรรทัด form_key = ... ออก
                 
-                with st.form(key=form_key):
-                    # 🔴 START: บล็อกโค้ดสำหรับ "วาด" (Render) ที่หายไป 🔴
-                    args_data = {}
-                    form_input_keys = [] # เก็บ Key สำหรับ Cleanup
-                    
+                # ลบ with st.form(key=form_key): ออก (ขยับ code block ด้านล่างกลับมา 1 tab)
+                
+                # 🔴 START: ส่วนที่แก้ไข Indentation และลบ Form 🔴
+                args_data = {}
+                form_input_keys = [] # เก็บ Key สำหรับ Cleanup
+                
+                if selected_kw.get('args'):
+                    for i, arg_item in enumerate(selected_kw.get('args', [])):
+                        arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
+                        raw_arg_name = arg_info.get('name')
+                        if not raw_arg_name:
+                            continue
+
+                        clean_arg_name = raw_arg_name.strip('${}')
+                        arg_info['name'] = clean_arg_name
+
+                        unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
+                        form_input_keys.append(unique_key) # เก็บ Base Key
+
+                        current_value_in_state = st.session_state.get(unique_key)
+                        if current_value_in_state is not None:
+                            arg_info['default'] = current_value_in_state
+
+                        # --- (1) ส่ง selected_kw_name ---
+                        rendered_value = render_argument_input(
+                            arg_info,
+                            ws_state,
+                            unique_key,
+                            current_value=current_value_in_state,
+                            selected_kw_name=selected_kw.get('name') 
+                        )
+
+                st.markdown("---")
+
+                # เปลี่ยนจาก st.form_submit_button เป็น st.button ปกติ
+                submitted_add = st.button(
+                    f"✅ Add Step to Workspace",
+                    key=f"btn_submit_add_{dialog_state_key}", # ต้องเพิ่ม key ไม่ให้ซ้ำ
+                    type="primary",
+                    use_container_width=True
+                )
+
+                if submitted_add:
+                    final_args_data = {}
                     if selected_kw.get('args'):
                         for i, arg_item in enumerate(selected_kw.get('args', [])):
                             arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
                             raw_arg_name = arg_info.get('name')
-                            if not raw_arg_name: 
-                                continue
-                            
+                            if not raw_arg_name: continue
+
                             clean_arg_name = raw_arg_name.strip('${}')
                             arg_info['name'] = clean_arg_name
+                            # Key ต้องเหมือนกับตอน Render เป๊ะๆ
+                            unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
+                            
+                            kw_name_lower = str(selected_kw.get('name', '')).lower()
+                            arg_lower = clean_arg_name.lower()
+
+                            # ---------------------------------------------------------
+                            # ✅ FINAL SAVE LOGIC (Priority: Menu > Preset > Locator > Pattern > Default)
+                            # ---------------------------------------------------------
+                            final_value = None
+
+                            # 1. Menu Locators (สูงสุด)
+                            if 'go to menu name' in kw_name_lower and clean_arg_name == 'menu_locator':
+                                selected_main = st.session_state.get(f"{unique_key}_main_menu_select", '')
+                                final_value = f"${{mainmenu}}[{selected_main}]" if selected_main else ""
+                            elif 'go to submenu name' in kw_name_lower and clean_arg_name == 'main_menu':
+                                final_value = st.session_state.get(f"{unique_key}_main_menu_select", '')
+                            elif 'go to submenu name' in kw_name_lower and clean_arg_name == 'submenu':
+                                final_value = st.session_state.get(f"{unique_key}_sub_menu_select", '')
+                            # elif clean_arg_name == 'pagename':
+                            #     selected_page_key = st.session_state.get(f"{unique_key}_pagename_select", '')
+                            #     final_value = f"${{menuname}}[{selected_page_key}]" if selected_page_key else ""
+
+                            # 2. PRESETS (เช่น button_name, status)
+                            # ✅ สำคัญ: ต้องเช็ค Preset ก่อน Locator
+                            elif clean_arg_name in ARGUMENT_PRESETS:
+                                config = ARGUMENT_PRESETS[clean_arg_name]
+                                input_type = config.get('type')
+                                if input_type == "select_or_input":
+                                    selected = st.session_state.get(f"{unique_key}_select")
+                                    if selected == "📝 Other (custom)":
+                                        final_value = st.session_state.get(f"{unique_key}_custom")
+                                    else:
+                                        final_value = selected
+                                elif input_type == "boolean":
+                                    final_value = 'true' if st.session_state.get(unique_key, False) else 'false'
+                                else: 
+                                    final_value = st.session_state.get(unique_key)
+
+                            # 3. LOCATOR (เช็คคำว่า button, field ฯลฯ)
+                            elif any(s in arg_lower for s in ['locator', 'field', 'button', 'element', 'header', 'body', 'theader', 'tbody']):
+                                final_value = st.session_state.get(f"{unique_key}_locator_select")
+
+                            # 4. PATTERNS (เช่น timeout, password)
+                            else:
+                                matched_pattern = False
+                                for pattern_key in ARGUMENT_PATTERNS.keys():
+                                    if pattern_key in arg_lower:
+                                        # Pattern ใช้ key หลัก
+                                        final_value = st.session_state.get(unique_key)
+                                        matched_pattern = True
+                                        break
+                                
+                                # 5. DEFAULT
+                                if not matched_pattern:
+                                    # Default ใช้ _default_text
+                                    final_value = st.session_state.get(f"{unique_key}_default_text")
+
+                            # Fallback
+                            if final_value is None:
+                                final_value = st.session_state.get(unique_key, '')
+
+                            final_args_data[clean_arg_name] = final_value
+                        # --- END: MODIFIED SMART KEY LOGIC ---
+
+                    new_step = {
+                        "id": str(uuid.uuid4()), 
+                        "keyword": selected_kw['name'], 
+                        "args": final_args_data
+                    }
+                    
+                    add_step_callback(context, new_step)
+                    
+                    # Cleanup
+                    st.session_state[dialog_state_key] = False
+                    if selected_kw_state_key in st.session_state: 
+                        del st.session_state[selected_kw_state_key]
+                    
+                    # Cleanup Logic (ต้องแก้ให้ลบ key ของ locator select ด้วย)
+                    form_input_keys_to_clean_on_submit = []
+                    if selected_kw.get('args'):
+                        for i, arg_item in enumerate(selected_kw.get('args', [])):
+                            clean_arg_name = arg_item.get('name', '').strip('${}')
+                            if not clean_arg_name: continue
                             
                             unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
-                            form_input_keys.append(unique_key) # เก็บ Base Key
                             
-                            # ดึงค่าปัจจุบันจาก session_state (ที่อาจถูก set โดย CSV Quick Insert)
-                            current_value_in_state = st.session_state.get(unique_key)
-                            
-                            if current_value_in_state is not None:
-                                arg_info['default'] = current_value_in_state
-                            
-                            # วาด Input (ฟังก์ชันนี้จะเติม Suffix _default_text, _locator_select ฯลฯ ให้เอง)
-                            rendered_value = render_argument_input(
-                                arg_info, 
-                                ws_state, 
-                                unique_key,
-                                current_value=current_value_in_state
-                            )
-                            # (เราไม่จำเป็นต้องใช้ rendered_value ที่นี่ เพราะ st.form จะจัดการ state เอง)
+                            form_input_keys_to_clean_on_submit.append(unique_key)
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_locator_select") # ลบ key นี้
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_page_select")    # ลบ key นี้ด้วย
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_main_menu_select")
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_sub_menu_select")
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_pagename_select")
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_select")
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_custom")
+                            form_input_keys_to_clean_on_submit.append(f"{unique_key}_default_text")
+
+                    for key in form_input_keys_to_clean_on_submit:
+                        if key in st.session_state: 
+                            del st.session_state[key]
+
+                    # ลบค่า CSV Quick Insert
+                    csv_keys = [
+                        f"quick_csv_ds_{dialog_state_key}",
+                        f"quick_csv_row_{dialog_state_key}",
+                        f"quick_csv_col_{dialog_state_key}",
+                        f"quick_csv_target_{dialog_state_key}",
+                    ]
+                    for key in csv_keys:
+                        if key in st.session_state:
+                            del st.session_state[key]
                     
-                    st.markdown("---")
-                    
-                    # 🔴 ปุ่ม Submit ที่หายไป 🔴
-                    submitted_add = st.form_submit_button(
-                        f"✅ Add Step to Workspace", 
-                        type="primary", 
-                        use_container_width=True
-                    )
-                    # 🔴 END: สิ้นสุดบล็อกโค้ดที่หายไป 🔴
-
-                    # ▼▼▼ บล็อกโค้ดสำหรับ "ประมวลผล" (Logic) ที่คุณมีอยู่แล้ว (แต่ต้องอยู่ข้างใน if) ▼▼▼
-                    if submitted_add:
-                        final_args_data = {} # ✅ สร้างตัวแปร (แก้ NameError)
-                        
-                        if selected_kw.get('args'):
-                            for i, arg_item in enumerate(selected_kw.get('args', [])):
-                                arg_info = arg_item.copy() if isinstance(arg_item, dict) else {'name': str(arg_item), 'default': ''}
-                                raw_arg_name = arg_info.get('name')
-                                if not raw_arg_name: 
-                                    continue
-                                
-                                clean_arg_name = raw_arg_name.strip('${}')
-                                arg_info['name'] = clean_arg_name
-                                
-                                unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
-                                
-                                # --- START: NEW SMART KEY LOGIC ---
-                                final_value = None
-                                
-                                # Re-run the logic from ui_common.render_argument_input
-                                is_locator_arg = any(s in clean_arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'menu', 'header', 'body', 'theader', 'tbody'])
-                                
-                                # 1. 🐞 FIX: ตรวจสอบ PRESETS ก่อน
-                                if clean_arg_name in ARGUMENT_PRESETS:
-                                    config = ARGUMENT_PRESETS[clean_arg_name]
-                                    input_type = config.get('type')
-                                    if input_type == "select_or_input":
-                                        selected = st.session_state.get(f"{unique_key}_select")
-                                        if selected == "📝 Other (custom)":
-                                            final_value = st.session_state.get(f"{unique_key}_custom")
-                                        else:
-                                            final_value = selected
-                                    else:
-                                        # 'boolean' or 'select'
-                                        final_value = st.session_state.get(unique_key)
-                                
-                                # 2. 🐞 FIX: ค่อยตรวจสอบ LOCATOR ทีหลัง
-                                elif is_locator_arg:
-                                    final_value = st.session_state.get(f"{unique_key}_locator_select")
-
-                                # 3. ตรวจสอบ PATTERNS
-                                else:
-                                    matched_pattern = False
-                                    arg_lower = clean_arg_name.lower()
-                                    for pattern_key in ARGUMENT_PATTERNS.keys():
-                                        if pattern_key in arg_lower:
-                                            final_value = st.session_state.get(unique_key)
-                                            matched_pattern = True
-                                            break
-                                    
-                                    # 4. Default Text Input
-                                    if not matched_pattern:
-                                        final_value = st.session_state.get(f"{unique_key}_default_text")
-                                
-                                # Fallback to the original logic if new value is None
-                                if final_value is None:
-                                    final_value = st.session_state.get(unique_key, '') # Fallback
-                                    
-                                final_args_data[clean_arg_name] = final_value
-                                # --- END: NEW SMART KEY LOGIC ---
-
-                        # ✅ แก้ไข IndentationError
-                        new_step = {
-                            "id": str(uuid.uuid4()), 
-                            "keyword": selected_kw['name'], 
-                            "args": final_args_data
-                        }
-                        
-                        add_step_callback(context, new_step)
-                        
-                        # Cleanup
-                        st.session_state[dialog_state_key] = False
-                        if selected_kw_state_key in st.session_state: 
-                            del st.session_state[selected_kw_state_key]
-                        
-                        # --- 🐞 FIX: แก้ไข Logic การลบ Key ---
-                        # (ต้องลบ Key ที่มี Suffix ด้วย)
-                        form_input_keys_to_clean_on_submit = []
-                        if selected_kw.get('args'):
-                            for i, arg_item in enumerate(selected_kw.get('args', [])):
-                                clean_arg_name = arg_item.get('name', '').strip('${}')
-                                if not clean_arg_name: continue
-                                
-                                unique_key = f"{dialog_state_key}_{kw_name_safe}_{clean_arg_name}_{i}"
-                                
-                                # เพิ่ม Key ที่มี Suffix ที่เป็นไปได้ทั้งหมด
-                                form_input_keys_to_clean_on_submit.append(unique_key)
-                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_locator_select")
-                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_select")
-                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_custom")
-                                form_input_keys_to_clean_on_submit.append(f"{unique_key}_default_text")
-
-                        for key in form_input_keys_to_clean_on_submit:
-                            if key in st.session_state: 
-                                del st.session_state[key]
-                        # --- END FIX ---
-                        
-                        # ลบค่า CSV Quick Insert
-                        csv_keys = [
-                            f"quick_csv_ds_{dialog_state_key}",
-                            f"quick_csv_row_{dialog_state_key}",
-                            f"quick_csv_col_{dialog_state_key}",
-                            f"quick_csv_target_{dialog_state_key}",
-                        ]
-                        for key in csv_keys:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        
-                        st.rerun()
+                    st.rerun()
 
         else:  # No keyword selected
             st.markdown("""

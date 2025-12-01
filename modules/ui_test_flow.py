@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 from .dialog_commonkw import render_add_step_dialog_base
+from .utils import format_robot_step_line
 
 # ===== เพิ่มส่วนนี้ =====
 def load_argument_presets():
@@ -1080,174 +1081,114 @@ def generate_full_script(ws_state):
     Assembles the final Robot Framework script from the workspace state,
     intelligently handling Suite Setup/Teardown and formatting empty arguments as ${EMPTY}.
     """
-
-    def format_single_step_line(step):
-        """
-        Helper to format a single step object into a string with its keyword and named arguments.
-        Handles special multi-line formatting for 'Verify Result of data table'.
-        """
-        keyword = step.get('keyword', '')
-        args = step.get('args', {})
-
-        # --- ✨✨✨ START: NEW LOGIC FOR SPECIAL KEYWORD ✨✨✨ ---
-        if keyword.strip() == 'Verify Result of data table':
-            # 1. แยก arguments ออกเป็น 2 กลุ่ม: fixed และ columns
-            fixed_args = {}
-            col_args = {}
-            for k, v in args.items():
-                if k.startswith('col.') or k.startswith('assert.') or k.startswith('expected.'):
-                    col_args[k] = v
-                else:
-                    fixed_args[k] = v
-
-            # --- Helper function for formatting a single value ---
-            def format_value(arg_name, arg_value):
-                if arg_value == "": return "${EMPTY}"
-                if arg_value is None: return None
-                is_locator = any(s in arg_name.lower() for s in ['locator', 'field', 'button', 'element', 'menu'])
-                if is_locator and not str(arg_value).startswith('${'):
-                    return f"${{{arg_value}}}"
-                return arg_value
-
-            # 2. สร้างบรรทัดแรก (Keyword + Fixed arguments)
-            first_line_parts = [keyword]
-            for name, value in fixed_args.items():
-                formatted_val = format_value(name, value)
-                if formatted_val is not None:
-                    first_line_parts.append(f"{name}={formatted_val}")
-            
-            # 3. จัดกลุ่มและสร้างบรรทัดสำหรับแต่ละ Column Assertion
-            column_lines = []
-            # หาชื่อ column ที่ไม่ซ้ำกันจาก key 'col.*'
-            column_ids = sorted(list(set([k.split('.')[1] for k in col_args if k.startswith('col.')])))
-            
-            for col_id in column_ids:
-                line_parts = ["..."]
-                
-                # เรียงลำดับ col, assert, expected ให้สวยงาม
-                col_name = f"col.{col_id}"
-                assert_name = f"assert.{col_id}"
-                expected_name = f"expected.{col_id}"
-                
-                # เพิ่ม col.*
-                val = format_value(col_name, col_args.get(col_name))
-                if val is not None: line_parts.append(f"{col_name}={val}")
-
-                # เพิ่ม assert.*
-                val = format_value(assert_name, col_args.get(assert_name))
-                if val is not None: line_parts.append(f"{assert_name}={val}")
-
-                # เพิ่ม expected.*
-                val = format_value(expected_name, col_args.get(expected_name))
-                if val is not None: line_parts.append(f"{expected_name}={val}")
-                
-                column_lines.append("    ".join(line_parts))
-
-            # 4. รวมทุกบรรทัดเข้าด้วยกัน แล้วส่งกลับเป็น string เดียว
-            final_output = "    ".join(first_line_parts)
-            if column_lines:
-                final_output += "\n" + "\n".join(column_lines)
-            return final_output
-        # --- ✨✨✨ END: NEW LOGIC FOR SPECIAL KEYWORD ✨✨✨ ---
-
-        # --- Original logic for all other keywords ---
-        line_parts = [keyword]
-        for arg_name, arg_value in args.items():
-            formatted_value = ""
-            if arg_value == "":
-                formatted_value = "${EMPTY}"
-            elif arg_value is not None:
-                is_locator_arg = any(substr in arg_name.lower() for substr in ['locator', 'field', 'button', 'element', 'menu'])
-                if is_locator_arg and not str(arg_value).startswith('${'):
-                    formatted_value = f"${{{arg_value}}}"
-                else:
-                    formatted_value = arg_value
-            else:
-                continue
-            line_parts.append(f"{arg_name}={formatted_value}")
-        
-        return "    ".join(line_parts)
-
     # --- 1. Collect all used locators from all sections ---
     all_steps = ws_state.get('suite_setup', []) + ws_state.get('timeline', []) + ws_state.get('suite_teardown', [])
     used_locator_names = set()
     for step in all_steps:
         for arg_name, arg_value in step.get('args', {}).items():
-            is_locator_arg = any(substr in arg_name.lower() for substr in ['locator', 'field', 'button', 'element', 'menu'])
+            # Match locator args more broadly
+            is_locator_arg = any(substr in arg_name.lower() for substr in ['locator', 'field', 'button', 'element', 'menu', 'theader', 'tbody'])
             if is_locator_arg and arg_value and arg_value != '${EMPTY}':
-                used_locator_names.add(arg_value)
+                # Avoid adding variables like ${VARIABLE}
+                if not (isinstance(arg_value, str) and arg_value.startswith('${') and arg_value.endswith('}')):
+                    used_locator_names.add(arg_value)
 
     # --- 2. Build *** Settings *** section ---
     settings_section = ["*** Settings ***"]
     if ws_state.get('common_keyword_path'):
-        settings_section.append(f"Resource          ../../resources/commonkeywords.resource")
+        # Assuming commonkeywords.resource is one level up from the test file's location
+        # Adjust the path based on your actual project structure if needed
+        settings_section.append(f"Resource          ../resources/commonkeywords.resource") # Use relative path
 
     # Logic for Suite Setup
     setup_steps = ws_state.get('suite_setup', [])
     if len(setup_steps) == 1:
-        settings_section.append(f"Suite Setup       {format_single_step_line(setup_steps[0])}")
+        # Pass the step dictionary to the formatting function
+        settings_section.append(f"Suite Setup       {format_robot_step_line(setup_steps[0])}")
     elif len(setup_steps) > 1:
-        first_line = format_single_step_line(setup_steps[0])
+        first_line = format_robot_step_line(setup_steps[0])
         settings_section.append(f"Suite Setup       Run Keywords    {first_line}")
         for step in setup_steps[1:]:
-            settings_section.append(f"...    AND    {format_single_step_line(step)}")
+            # Use 4 spaces for AND alignment
+            settings_section.append(f"    ...    AND    {format_robot_step_line(step)}")
 
     # Logic for Suite Teardown
     teardown_steps = ws_state.get('suite_teardown', [])
     if len(teardown_steps) == 1:
-        settings_section.append(f"Suite Teardown    {format_single_step_line(teardown_steps[0])}")
+        settings_section.append(f"Suite Teardown    {format_robot_step_line(teardown_steps[0])}")
     elif len(teardown_steps) > 1:
-        first_line = format_single_step_line(teardown_steps[0])
+        first_line = format_robot_step_line(teardown_steps[0])
         settings_section.append(f"Suite Teardown    Run Keywords    {first_line}")
         for step in teardown_steps[1:]:
-            settings_section.append(f"...    AND    {format_single_step_line(step)}")
+            settings_section.append(f"    ...    AND    {format_robot_step_line(step)}")
 
     # --- 3. Build *** Variables *** section ---
     variables_section = ["\n*** Variables ***"]
-    used_locators = [loc for loc in ws_state.get('locators', []) if loc['name'] in used_locator_names]
-    if used_locators:
-        max_len = max((len(f"${{{loc['name']}}}") for loc in used_locators), default=20) + 4
-        for loc in sorted(used_locators, key=lambda x: x['name']):
-            variables_section.append(f"{f'${{{loc['name']}}}'.ljust(max_len)}{loc['value']}")
+    # Filter locators defined in the workspace that are actually used
+    defined_locators = {loc['name']: loc['value'] for loc in ws_state.get('locators', [])}
+    used_defined_locators = {name: defined_locators[name] for name in used_locator_names if name in defined_locators}
+
+    if used_defined_locators:
+        # Calculate max length based on the used *and* defined locators
+        max_len = max((len(f"${{{name}}}") for name in used_defined_locators), default=20) + 4
+        # Sort by name before appending
+        for name in sorted(used_defined_locators.keys()):
+            value = used_defined_locators[name]
+            variables_section.append(f"{f'${{{name}}}'.ljust(max_len)}{value}")
+
+    # Add warnings for used locators that weren't found in the workspace definitions
+    undefined_locators = used_locator_names - set(defined_locators.keys())
+    if undefined_locators:
+        if not used_defined_locators: # Add header if it wasn't added
+             variables_section.append("\n*** Variables ***")
+        variables_section.append("\n# WARNING: The following locators were used but not found in Assets:")
+        for name in sorted(list(undefined_locators)):
+            variables_section.append(f"# ${{{name}}}")
+
 
     # --- 4. Build *** Test Cases *** section ---
     test_cases_section = ["\n*** Test Cases ***"]
-    test_cases_section.append("Generated Visual Test Case")
-    
+    test_cases_section.append("Generated Visual Test Case") # Default test case name
+
     timeline_steps = ws_state.get('timeline', [])
     if not timeline_steps:
-        test_cases_section.append("    Log    No steps in test case.")
+        test_cases_section.append("    Log    No steps in test case.") # Use 4 spaces indent
     else:
         for step in timeline_steps:
-            # format_single_step_line อาจคืนค่ามาหลายบรรทัด
-            formatted_lines_str = format_single_step_line(step)
-            
-            # แยกแต่ละบรรทัดออกจากกัน
+            # format_robot_step_line handles multi-line formatting internally now
+            formatted_lines_str = format_robot_step_line(step)
             lines = formatted_lines_str.split('\n')
-            
-            # บรรทัดแรกต้องย่อหน้าด้วย 4 spaces
-            test_cases_section.append(f"    {lines[0]}")
-            
-            # บรรทัดที่เหลือ (ที่ขึ้นต้นด้วย ... อยู่แล้ว) ก็ต้องย่อหน้าด้วย 4 spaces เช่นกัน
+
+            # Indent the first line
+            test_cases_section.append(f"    {lines[0]}") # Use 4 spaces indent
+
+            # Indent subsequent lines (continuation lines like '...' or multi-line verify)
             if len(lines) > 1:
                 for line in lines[1:]:
-                    test_cases_section.append(f"    {line}")
+                     # Check if the continuation line from format_robot_step_line already includes indent
+                     if line.startswith("    ..."): # It already has indent + ...
+                          test_cases_section.append(f"    {line}") # Add base indent only
+                     elif line.strip().startswith("..."): # It has ... but maybe not full indent
+                          test_cases_section.append(f"    {line.strip()}") # Add base indent + stripped line
+                     else: # Likely a multi-line argument value without '...' prefix
+                          test_cases_section.append(f"        {line}") # Needs double indent? Check format_robot_step_line output
 
     # --- 5. Combine all sections ---
     final_script_parts = []
+    # Add Settings section (always present)
     final_script_parts.extend(settings_section)
+    # Add Variables section only if it contains more than just the header
     if len(variables_section) > 1:
         final_script_parts.extend(variables_section)
+    # Add Test Cases section (always present)
     final_script_parts.extend(test_cases_section)
-    
+
+    # Join with single newline, ensuring sections aren't crammed
     return "\n".join(final_script_parts)
 
 def render_test_flow_tab():
     inject_test_flow_css()
     ws_state = st.session_state.studio_workspace
-    
-    if st.session_state.get('show_add_dialog'):
-        render_add_step_dialog()
 
     left_col, right_col = st.columns([0.6, 0.4], gap="large")
 

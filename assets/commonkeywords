@@ -39,24 +39,28 @@ ${LOCATOR_SERACH_CRITERIA_BTN}        //button[contains(@class, 'btn-search-box'
 ${LOCATOR_NOTIFIER_VISIBLE}           //div[@aria-label="::title_label::"] 
 ${LOCATOR_NOTIFIER_CONTENT}           //div[@role="alertdialog" and contains(@aria-label, '::content_label::')]
   
-
-&{mainmenu}       configuration=//*[@title="Configuration"]
-&{submenu}        usermgt=//a[contains(@title, 'User Management')]
-...               companyMgt=//a[contains(@title, 'Company Management')]
-
-&{menuname}       usermgt=User Management
-...               companyMgt=Company Management
-
-${homemenu}       //*[contains(@href, '/mainmenu/home') and contains(@class,'brand')]
-
 # Pagination Info.
 ${LOCATOR_PAGINATION_LINK}     //a[@class="page-link" and contains(text(), '::PAGENUM::')]
 
-#Email Address (Less Secure)
+
+# Email Address (Less Secure)
 ${HOST_IMAP_TEMPEMAIL}          imap.mail.yahoo.com     
 ${CONF_TEMPEMAIL_USEREMAIL}     robot.qanb@yahoo.com
 ${CONF_TEMPEMAIL_PASSEMAIL}     evnfpzerwhejxefd
 
+
+### All Menu Locator ###
+${homemenu}    //*[contains(@href, '/mainmenu/home') and contains(@class,'brand')]
+
+&{mainmenu}    configuration=//*[@title="Configuration"]
+
+&{submenu}    usermgt=//a[contains(@title, 'User Management')]
+...            companyMgt=//a[contains(@title, 'Company Management')]
+
+&{menuname}    usermgt=User Management
+...             companyMgt=Company Management
+
+### All Menu Locator (END) ###
 
 *** Keywords ***
 Setup ZAP And Browser
