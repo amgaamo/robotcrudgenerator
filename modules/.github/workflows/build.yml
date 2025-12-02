@@ -2,7 +2,7 @@ name: Build Nuitka Modules
 
 on:
   push:
-    branches: [ main, master ] # แก้ให้ตรงกับ branch หลักของคุณ
+    branches: [ main, crud_keyword ] # แก้ให้ตรงกับ branch หลักของคุณ
   workflow_dispatch: # เพื่อให้กดรันเองด้วยมือได้
 
 jobs:
