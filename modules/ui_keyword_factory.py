@@ -159,9 +159,10 @@ def render_keyword_list_view(ws):
         # --- END: เพิ่มตัวแปรเช็คสถานะ Import ---
 
         with st.container(border=True):
-            cols = st.columns([4, 1, 1])
+            cols = st.columns([5, 0.5, 0.5])
             with cols[0]:
-                st.markdown(f"**{kw.get('name', 'Untitled')}**")
+                kw_name = kw.get('name', 'Untitled')
+                st.markdown(f"<div style='color: #58a6ff; font-weight: 600; font-size: 1rem; margin-bottom: 2px;'>{kw_name}</div>", unsafe_allow_html=True)
                 
                 args_display = [f"{arg['name']}" + (f"={arg['default']}" if arg.get('default') else "")
                                 for arg in kw.get('args', [])]
