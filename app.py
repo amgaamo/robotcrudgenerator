@@ -5,6 +5,8 @@ Clean architecture with separated backend modules
 
 import streamlit as st
 from streamlit_option_menu import option_menu
+from modules import license_checker
+import datetime
 
 # Backend imports
 from modules.session_manager import init_session_state 
@@ -35,6 +37,35 @@ try:
     PARSER_AVAILABLE = True
 except ImportError:
     PARSER_AVAILABLE = False
+
+### Check License Key ###
+# รับค่า 3 ตัว: สถานะ, ข้อความ, และ วันที่หมดอายุ
+is_valid, msg, exp_date = license_checker.check_license_file()
+
+if not is_valid:
+    st.error(f"⛔ ACCESS DENIED: {msg}")
+    st.stop()
+
+# --- ส่วนคำนวณวันเหลือ ---
+today = datetime.date.today()
+remaining_days = (exp_date - today).days
+
+# --- ส่วนแสดงผลสวยๆ (Sidebar หรือ Main Page) ---
+with st.sidebar:
+    st.divider() # ขีดเส้นคั่น
+    # แสดงเป็น Metric ตัวเลขใหญ่ๆ
+    st.metric(
+        label="License Remaining",
+        value=f"{remaining_days} Days",
+        delta=f"Expires: {exp_date.strftime('%d %b %Y')}",
+        delta_color="normal" # สีเทาปกติ (หรือใช้ "off" ถ้าไม่อยากได้ลูกศร)
+    )
+    
+    # ถ้าใกล้วันหมดอายุ (เช่น น้อยกว่า 7 วัน) ให้เตือนสีแดงเพิ่ม
+    if remaining_days <= 7:
+        st.warning("⚠️ Your license is expiring soon!")
+
+# --------------------------
 
 # ============================================================================
 # PAGE CONFIGURATION
