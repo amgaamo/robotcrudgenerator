@@ -33,8 +33,7 @@ jobs:
     - name: Build Module
       shell: bash
       run: |
-        # คำสั่งนี้ใช้ได้ทั้ง Windows และ Mac (ไม่ต้องใส่ --mingw64)
-        # Nuitka จะเลือก Compiler ของแต่ละเครื่องให้อัตโนมัติ
+        # --include-package=modules คือสั่งให้มัดรวมทุกไฟล์ในโฟลเดอร์ modules มาเป็นก้อนเดียว
         python -m nuitka --module --include-package=modules --output-dir=build modules
 
     - name: Upload Artifacts
