@@ -20,7 +20,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.12' # หรือเวอร์ชันที่คุณใช้
+        python-version: '3.13' # หรือเวอร์ชันที่คุณใช้
         cache: 'pip'
 
     - name: Install dependencies
@@ -28,7 +28,7 @@ jobs:
         python -m pip install --upgrade pip
         # 🟢 ต้องลง cryptography ด้วย ไม่งั้น Nuitka จะหา module ไม่เจอตอน compile
         pip install nuitka cryptography
-        # pip install -r requirements.txt # (ถ้ามีไฟล์นี้ให้เอา comment ออก)
+        #pip install -r requirements.txt # (ถ้ามีไฟล์นี้ให้เอา comment ออก)
 
     - name: Build Module
       shell: bash
