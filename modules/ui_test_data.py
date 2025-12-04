@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import uuid
 import json
+import re
 from datetime import datetime
 from .file_manager import append_robot_content_intelligently, create_new_robot_file, append_to_api_base, scan_robot_project
 from .utils import parse_data_sources
@@ -25,6 +26,106 @@ def save_df_to_csv(project_path, filename, dataframe):
     except Exception as e:
         st.error(f"❌ Error saving file: {str(e)}")
         return False
+
+
+def scan_and_import_api_services(project_path):
+    """
+    Auto-scan resources/services for keywords starting with 'Request Service*' or 'Service*'
+    and parse their [Arguments].
+    """
+    services_path = os.path.join(project_path, 'resources', 'services')
+    
+    if not os.path.exists(services_path):
+        return
+
+    ws_state = st.session_state.studio_workspace
+    
+    # แยก Service ที่สร้างเอง (Manual) ออกจากที่ Import มา (Auto) เพื่อไม่ให้ลบของที่ user สร้างเอง
+    manual_services = [s for s in ws_state.get('api_services', []) if not s.get('is_imported_keyword', False)]
+    imported_services = []
+    
+    # วนลูปหาไฟล์ .resource ทั้งหมด
+    for root, dirs, files in os.walk(services_path):
+        for file in files:
+            if file.endswith(('.resource', '.robot')) and file not in ['api_base.resource', 'utilitykeywords.resource']:
+                full_path = os.path.join(root, file)
+                try:
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                    
+                    in_keywords = False
+                    current_keyword = None
+                    current_args = []
+                    
+                    for i, line in enumerate(lines):
+                        clean_line = line.strip()
+                        
+                        # ตรวจสอบ section
+                        if clean_line.startswith('*** Keywords ***') or clean_line.startswith('***Keywords***'):
+                            in_keywords = True
+                            continue
+                        elif clean_line.startswith('***') and in_keywords: 
+                            in_keywords = False
+                            current_keyword = None
+                            continue
+                            
+                        if in_keywords:
+                            # 1. เจอชื่อ Keyword (บรรทัดที่ไม่ย่อหน้า)
+                            if line[0] != ' ' and line[0] != '\t' and len(clean_line) > 0:
+                                # บันทึก keyword ก่อนหน้าถ้ามี
+                                if current_keyword:
+                                    imported_services.append({
+                                        'id': str(uuid.uuid4()),
+                                        'service_name': current_keyword,
+                                        'endpoint_path': 'Auto-Imported',
+                                        'args_list': current_args, # เก็บ Arguments ที่หาเจอ
+                                        'is_imported_keyword': True,
+                                        'source_file': file
+                                    })
+                                    current_keyword = None
+                                    current_args = []
+
+                                # เช็คว่าใช่ Keyword ที่เราต้องการไหม
+                                if clean_line.startswith("Request Service") or clean_line.startswith("Service") or clean_line.startswith("Request"):
+                                    kw_name = clean_line.split('  ')[0].strip()
+                                    current_keyword = kw_name
+                            
+                            # 2. หา [Arguments] ในบรรทัดต่อๆ มาของ keyword นั้น
+                            elif current_keyword and clean_line.startswith('[Arguments]'):
+                                    # ตัด [Arguments] ออก แล้วแยก string
+                                    args_str = clean_line.replace('[Arguments]', '').strip()
+                                    
+                                    args_raw = re.split(r'\s+', args_str)                           
+                                    args = []
+                                    for arg in args_raw:
+                                        arg = arg.strip()
+                                        if arg.startswith('$') or arg.startswith('@') or arg.startswith('&'):
+                                            # ถ้ามี default value (=...) ให้ตัดออก เก็บแค่ชื่อตัวแปร
+                                            if '=' in arg:
+                                                arg_name = arg.split('=')[0]
+                                                args.append(arg_name)
+                                            else:
+                                                args.append(arg)
+                                    
+                                    current_args = args
+
+                    # อย่าลืมบันทึก keyword ตัวสุดท้ายของไฟล์
+                    if current_keyword:
+                         imported_services.append({
+                            'id': str(uuid.uuid4()),
+                            'service_name': current_keyword,
+                            'endpoint_path': 'Auto-Imported',
+                            'args_list': current_args,
+                            'is_imported_keyword': True,
+                            'source_file': file
+                        })
+
+                except Exception as e:
+                    print(f"Error reading {file}: {e}")
+    
+    # รวม Manual + New Imported (แทนที่ Imported เก่าทั้งหมดด้วยตัวใหม่ที่ Scan ได้)
+    ws_state['api_services'] = manual_services + imported_services
+
 
 # ============================================================================
 # DIALOGS
@@ -295,7 +396,9 @@ def render_test_data_tab():
                 if not ws_state.get('data_sources'):
                     st.info("No data source links defined.")
                 else:
-                    # ✅ CSS: เพิ่ม Style เพื่อบีบให้แถวชิดกัน
+                    # -------------------------------------------------------
+                    # 🚩 จุดแก้ไขที่ 1: เพิ่ม CSS ให้ครบ (รวม imported-status-box)
+                    # -------------------------------------------------------
                     st.markdown("""
                     <style>
                         /* Header Styling */
@@ -305,16 +408,28 @@ def render_test_data_tab():
                             font-size: 0.8rem; font-weight: 600; color: #8b949e; letter-spacing: 0.5px;
                         }
                         .ds-header-cell { flex: 1; }
-                        /* Column Ratios (Match st.columns) */
+                        /* Column Ratios */
                         .cell-2-5 { flex: 2.5; } .cell-2 { flex: 2; } .cell-1-5 { flex: 1.5; } .cell-0-6 { flex: 0.6; }
                         
-                        /* Row Container */
+                        /* Row & Input Styling */
                         .ds-row-container { padding: 2px 0; border-bottom: 1px solid rgba(48, 54, 61, 0.3); }
-                        /* Compact Input */
                         .ds-row-container .stTextInput, .ds-row-container .stSelectbox, .ds-row-container .stButton { margin-bottom: 0px !important; }
-                        /* Imported Label */
-                        .imported-data-box { font-family: monospace; font-size: 0.8rem; color: #79c0ff; background: rgba(56, 139, 253, 0.1); padding: 4px 8px; border-radius: 4px; margin-top: 4px; }
-                        .complete-form-label { opacity: 0.5; text-align: center; font-size: 0.8rem; margin-top: 6px; }
+                        
+                        /* Status Boxes */
+                        .imported-data-box { 
+                            font-family: monospace; font-size: 0.8rem; color: #79c0ff; 
+                            background: rgba(56, 139, 253, 0.1); padding: 4px 8px; 
+                            border-radius: 4px; margin-top: 4px; 
+                        }
+                        .imported-status-box {
+                            font-size: 0.75rem; color: #79c0ff; 
+                            background: rgba(56, 139, 253, 0.15); border: 1px solid rgba(56, 139, 253, 0.3);
+                            padding: 4px 8px; border-radius: 4px; text-align: center; margin-top: 4px;
+                        }
+                        .complete-form-label { 
+                            opacity: 0.5; text-align: center; font-size: 0.75rem; 
+                            margin-top: 8px; font-style: italic;
+                        }
                     </style>
                     
                     <div class="ds-header-row">
@@ -326,17 +441,21 @@ def render_test_data_tab():
                     </div>
                     """, unsafe_allow_html=True)
                     
+                    # -------------------------------------------------------
+                    # 🚩 จุดแก้ไขที่ 2: Logic การแสดงผลในลูป
+                    # -------------------------------------------------------
                     for i, src in enumerate(ws_state['data_sources']):
                         is_imp = src.get('is_imported', False)
                         
                         st.markdown('<div class="ds-row-container">', unsafe_allow_html=True)
-                        # ✅ ใช้ gap="small" เพื่อบีบช่องว่างแนวตั้ง
                         rc = st.columns([2.5, 2.5, 2, 1.5, 0.6], gap="small")
                         
+                        # 1. Name
                         with rc[0]:
                             if is_imp: st.markdown(f'<div class="imported-data-box">{src.get("name")}</div>', unsafe_allow_html=True)
                             else: src['name'] = st.text_input(f"N{i}", src.get('name',''), key=f"ds_n_{i}", label_visibility="collapsed", placeholder="DS_NAME")
                         
+                        # 2. File
                         with rc[1]:
                             if is_imp: st.markdown(f'<div class="imported-data-box">{src.get("file_name")}</div>', unsafe_allow_html=True)
                             else: 
@@ -344,19 +463,22 @@ def render_test_data_tab():
                                 idx = opts.index(src.get('file_name')) if src.get('file_name') in opts else 0
                                 src['file_name'] = st.selectbox(f"F{i}", opts, index=idx, key=f"ds_f_{i}", label_visibility="collapsed")
                         
+                        # 3. Col Var
                         with rc[2]:
                             if is_imp: st.markdown(f'<div class="imported-data-box">{src.get("col_name")}</div>', unsafe_allow_html=True)
                             else: src['col_name'] = st.text_input(f"C{i}", src.get('col_name',''), key=f"ds_c_{i}", label_visibility="collapsed", placeholder="col_var")
                         
+                        # 4. Actions (จุดที่แสดงปุ่ม Export หรือ Complete Form)
                         with rc[3]:
                             if is_imp: 
-                                st.markdown('<div class="imported-data-box" style="text-align:center; color:#8b949e; border:1px solid #30363d;">📋 Imported</div>', unsafe_allow_html=True)
+                                st.markdown('<div class="imported-status-box">📋 Imported</div>', unsafe_allow_html=True)
                             elif src.get('name') and src.get('file_name') and src.get('col_name'):
                                 if st.button("💾 Export", key=f"exp_{i}", use_container_width=True): 
                                     data_source_export_dialog(src, i)
                             else: 
                                 st.markdown('<div class="complete-form-label">Complete Form</div>', unsafe_allow_html=True)
                         
+                        # 5. Delete
                         with rc[4]:
                             if st.button("🗑️", key=f"del_ds_{i}", use_container_width=True, type="secondary"): 
                                 ws_state['data_sources'].pop(i)
@@ -397,9 +519,16 @@ def render_test_data_tab():
 def render_api_generator_tab():
     """Renders API Generator content"""
     st.markdown("<h4 style='font-size: 1.4rem; margin-bottom: 0.5rem;'> 📡 Intelligent API Keyword Generator</h4>", unsafe_allow_html=True)
-    st.caption("Generate robust Robot Framework API keywords from sample request/response data.")
+    
     ws_state = st.session_state.studio_workspace
     if 'editing_api_service_id' not in ws_state: ws_state['editing_api_service_id'] = None
+
+    # --- AUTO LOAD SECTION ---
+    # สแกนทุกครั้งที่มีการ render tab นี้ และมี project path
+    if st.session_state.project_path:
+        # อาจจะเช็ค flag เล็กน้อยเพื่อไม่ให้ scan ถี่เกินไปถ้าไฟล์เยอะ (Optional)
+        scan_and_import_api_services(st.session_state.project_path)
+    # -------------------------
 
     act_c = st.columns([3, 1])
     with act_c[0]:
@@ -414,6 +543,7 @@ def render_api_generator_tab():
             })
             st.rerun()
     with act_c[1]:
+        # เคลียร์เฉพาะ manual services (ถ้าต้องการเก็บ auto ไว้ต้องปรับ logic แต่ปกติปุ่มนี้คือล้างหมด)
         if ws_state.get('api_services') and st.button("🗑️ Clear All", use_container_width=True):
             ws_state['api_services'] = []; st.rerun()
 
@@ -424,18 +554,59 @@ def render_api_generator_tab():
 def render_api_list_view():
     ws_state = st.session_state.studio_workspace
     st.markdown("<h4 style='font-size: 1.3rem; margin-bottom: 0.5rem;'><i class='fa-solid fa-link'></i> Your API Services</h4>", unsafe_allow_html=True)
-    if not ws_state.get('api_services'): st.info("No API services defined."); return
+    
+    services = ws_state.get('api_services', [])
+    if not services: st.info("No API services found."); return
 
-    for i, svc in enumerate(ws_state.get('api_services', [])):
+    # แยกแสดงผลเพื่อให้ดูง่าย (Optional) หรือรวมกันก็ได้
+    # ที่นี่จะแสดงรวมกันแต่ใช้ Visual แยก
+    
+    for i, svc in enumerate(services):
+        is_imported = svc.get('is_imported_keyword', False)
+        
+        # Style สำหรับ Imported card ให้ดูต่างออกไปเล็กน้อย
+        border_style = "border: 1px dashed rgba(48, 54, 61, 0.5);" if is_imported else ""
+        
         with st.container(border=True):
             cols = st.columns([4, 1, 1])
+            
             with cols[0]:
-                st.markdown(f"<div style='font-size: 1.2rem; font-weight: 600;'>{svc.get('service_name')}</div><br>", unsafe_allow_html=True)
-                st.markdown(f"<p style='font-size: 0.85rem; color: #a3a3a3; margin-top: -8px;'>PATH: <code>{svc.get('endpoint_path')}</code></p>", unsafe_allow_html=True)
+                # Service Name
+                st.markdown(f"<div style='font-size: 1.15rem; font-weight: 600; display:flex; align-items:center; gap:8px;'>"
+                            f"{svc.get('service_name')}"
+                            f"{'<span style=\"font-size:0.7rem; background:#21262d; padding:2px 6px; border-radius:4px; color:#8b949e;\">READ-ONLY</span>' if is_imported else ''}"
+                            f"</div>", unsafe_allow_html=True)
+                
+                # Metadata Line
+                if is_imported:
+                    # แสดง Arguments ที่ Parse มาได้
+                    args = svc.get('args_list', [])
+                    args_html = ""
+                    if args:
+                        args_html = " ".join([f"<code style='color:#d2a8ff; font-size:0.8rem;'>{arg}</code>" for arg in args])
+                    else:
+                        args_html = "<span style='color:#6e7681; font-size:0.8rem;'>No arguments</span>"
+                        
+                    st.markdown(f"<div style='margin-top:4px; font-size:0.85rem;'>Args: {args_html}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='margin-top:2px; font-size:0.8rem; color:#8b949e;'>📄 Source: {svc.get('source_file')}</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<p style='font-size: 0.85rem; color: #a3a3a3; margin-top: -4px;'>PATH: <code>{svc.get('endpoint_path')}</code></p>", unsafe_allow_html=True)
+
+            # Action Buttons
             with cols[1]:
-                if st.button("✏️ Edit", key=f"edit_api_{svc['id']}", use_container_width=True): ws_state['editing_api_service_id'] = svc['id']; st.rerun()
+                if not is_imported:
+                    if st.button("✏️ Edit", key=f"edit_api_{svc['id']}", use_container_width=True): 
+                        ws_state['editing_api_service_id'] = svc['id']; st.rerun()
+                else:
+                    st.button("🔒 View", key=f"view_api_{svc['id']}", disabled=True, use_container_width=True) # ปุ่มหลอกๆ หรือจะเอาออกเลยก็ได้
+            
             with cols[2]:
-                if st.button("🗑️ Delete", key=f"del_api_{svc['id']}", use_container_width=True): ws_state['api_services'].pop(i); st.rerun()
+                if not is_imported:
+                    if st.button("🗑️ Delete", key=f"del_api_{svc['id']}", use_container_width=True): 
+                        ws_state['api_services'].pop(i); st.rerun()
+                else:
+                    # สำหรับ Imported อาจจะไม่ให้ลบ หรือลบแล้วเดี๋ยวมันก็ Auto Scan กลับมา
+                    st.button("✖", key=f"del_imp_{svc['id']}", disabled=True, use_container_width=True)
 
 def render_api_editor_view():
     ws_state = st.session_state.studio_workspace
@@ -613,15 +784,23 @@ def rebuild_json_from_analyzed_fields(fields):
 
 def generate_main_keyword_code(s):
     kw = f"Request {s.get('service_name','').replace('_',' ').title()}"
-    args = ["${headeruser}", "${headerpassword}"]
+    
+    # 👇 แก้ไข: เช็คทั้ง headers_type='custom' และ custom_header_use_uid_ucode=True
+    args = []
+    if s.get('headers_type') == 'custom' and s.get('custom_header_use_uid_ucode'):
+        args.extend(["${headeruser}", "${headerpassword}"])
+    
+    # วนลูปเอา Field จาก JSON Body มาต่อท้าย (เหมือนเดิม)
     for p, f in s.get('analyzed_fields', {}).items():
         if f.get('is_argument'): args.append(f"${{{f['arg_name']}}}")
     
     arg_lines = []
-    if len(args) <= 8: arg_lines.append(f"    [Arguments]    {'    '.join(args)}")
+    if len(args) <= 8: 
+        arg_lines.append(f"    [Arguments]    {'    '.join(args)}")
     else:
         arg_lines.append(f"    [Arguments]    {'    '.join(args[:8])}")
-        for i in range(8, len(args), 8): arg_lines.append(f"    ...    {'    '.join(args[i:i+8])}")
+        for i in range(8, len(args), 8): 
+            arg_lines.append(f"    ...    {'    '.join(args[i:i+8])}")
     
     body_code = ""
     try:
@@ -639,13 +818,23 @@ def generate_main_keyword_code(s):
         else: body_code = f"    ${{bodydata}}=    Catenate    {pj}"
     except: body_code = f"    ${{bodydata}}=    Catenate    {s.get('req_body_sample','{}')}"
 
-    prep = []; ex_args = [f"    ...    servicename={s.get('service_name')}", f"    ...    method={s.get('http_method')}", f"    ...    urlpath=${{VAR_PATH_{s.get('service_name','').replace('service_','').upper()}}}", "    ...    requestbody=${bodydata}", "    ...    expectedstatus=200"]
+    prep = []
+    ex_args = [
+        f"    ...    servicename={s.get('service_name')}", 
+        f"    ...    method={s.get('http_method')}", 
+        f"    ...    urlpath=${{VAR_PATH_{s.get('service_name','').replace('service_','').upper()}}}", 
+        "    ...    requestbody=${bodydata}", 
+        "    ...    expectedstatus=200"
+    ]
     
     custom = []
+    # เงื่อนไขตรงนี้เหมือนกับด้านบน เพื่อให้สอดคล้องกัน (ถ้ามี Argument ก็ต้องมีการเรียกใช้)
     if s.get('headers_type') == 'custom' and s.get('custom_header_use_uid_ucode'):
         prep.append("\n    api_base.Request Service for get session data    ${headeruser}    ${headerpassword}")
         custom.extend(["uid=${GLOBAL_API_UID}", "ucode=${GLOBAL_API_UCODE}"])
-    if s.get('headers_type') == 'bearer': custom.append(f"Authorization=Bearer {s.get('bearer_token_var')}")
+    
+    if s.get('headers_type') == 'bearer': 
+        custom.append(f"Authorization=Bearer {s.get('bearer_token_var')}")
     
     manual = s.get('custom_header_manual_pairs','')
     if manual:
@@ -655,7 +844,7 @@ def generate_main_keyword_code(s):
     if not custom: ex_args.append("    ...    headers_type=simple")
     else:
         ex_args.append("    ...    headers_type=custom_headers")
-        prep.append(f"    &{{custom_headers_dict}}=    Create Dictionary    {'    '.join(custom)}")
+        prep.append(f"\n    &{{custom_headers_dict}}=    Create Dictionary    {'    '.join(custom)}")
         ex_args.append("    ...    &{custom_headers}=${custom_headers_dict}")
 
     val_code = []

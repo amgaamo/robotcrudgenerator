@@ -10,7 +10,7 @@ import re
 import textwrap
 from . import kw_manager
 from .session_manager import get_clean_locator_name
-from .ui_common import render_argument_input, ARGUMENT_PRESETS, ARGUMENT_PATTERNS
+from .ui_common import render_argument_input, ARGUMENT_PRESETS, ARGUMENT_PATTERNS, extract_csv_datasource_keywords
 from .dialog_commonkw import render_add_step_dialog_base
 from .file_manager import append_robot_content_intelligently, create_new_robot_file, scan_robot_project
 from .test_flow_manager import categorize_keywords
@@ -28,7 +28,6 @@ def render_keyword_factory_tab():
     Main entry point for the Keyword Factory Tab
     """
     from .crud_generator.ui_crud import inject_hybrid_css
-    from .ui_common import extract_csv_datasource_keywords
     inject_hybrid_css()
 
     kw_manager.initialize_workspace()
@@ -315,14 +314,14 @@ def render_keyword_editor_view(ws):
         st.markdown("**⚡ Quick Step Templates**")
         st.caption("Add multiple steps at once based on locators.")
         
-        t_col1, t_col2 = st.columns(2)
+        t_col1, t_col2, _ = st.columns([2, 2, 4], gap="small")
         with t_col1:
-            if st.button("✏️ Quick Fill Form", use_container_width=True):
+            if st.button("✏️ Quick Fill Form", use_container_width=False):
                 st.session_state.show_kw_factory_fill_form_dialog = True
                 st.session_state['kw_factory_add_dialog_context'] = {"key": keyword_id}
                 st.rerun()
         with t_col2:
-            if st.button("🔍 Quick Verify Detail", use_container_width=True):
+            if st.button("🔍 Quick Verify Detail", use_container_width=False):
                 st.session_state.show_kw_factory_verify_detail_dialog = True
                 st.session_state['kw_factory_add_dialog_context'] = {"key": keyword_id}
                 st.rerun()
@@ -626,7 +625,9 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
             cfg = step['config']
             st.caption(f"🗃️ **Data Source:** {cfg.get('ds_name', '?')}")
         elif step.get('type') == 'api_call':
-            st.caption(f"🌐 **API Service Call**")
+            # แสดง service name แทน
+            keyword_name = step.get('keyword', 'API Service Call')
+            st.caption(f"🌐 **{keyword_name}**")
 
         # Display Output Variable Info (Read-Only)
         output_config = step.get('output_variable', {})
@@ -661,40 +662,50 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
         st.markdown("##### 🔧 Edit Step")
 
         # Keyword Selector
+        # Keyword Selector (ซ่อนสำหรับ API/CSV steps)
         edit_kw_state_key = f"edit_kw_select_kw_{step['id']}"
-        # Ensure state exists before accessing index
-        if edit_kw_state_key not in st.session_state:
-             st.session_state[edit_kw_state_key] = step.get('keyword', '')
-
-        selected_kw_name = st.selectbox(
-            "Select Keyword",
-            all_kw_names,
-            index=all_kw_names.index(st.session_state[edit_kw_state_key]) if st.session_state[edit_kw_state_key] in all_kw_names else 0,
-            key=edit_kw_state_key
-        )
-        selected_kw = next((kw for kw in all_kws if kw['name'] == selected_kw_name), None)
-
         temp_args_key = f"edit_temp_args_kw_{step['id']}"
+        
+        # Check if this is API/CSV step
+        is_api_csv_step = step.get('type') in ['api_call', 'csv_import']
+        selected_kw_name = step.get('keyword', '')
+        selected_kw = None
+        
+        if not is_api_csv_step:
+        # Ensure state exists before accessing index
+            if edit_kw_state_key not in st.session_state:
+                st.session_state[edit_kw_state_key] = step.get('keyword', '')
 
-        # Check if keyword changed, reset temp args
-        if st.session_state.get(edit_kw_state_key) != st.session_state.get(f"prev_kw_kw_{step['id']}", ""):
-            st.session_state[temp_args_key] = {} # Reset args
-            if selected_kw_name == 'IF Condition':
-                 st.session_state[temp_args_key]['condition'] = step.get('args', {}).get('condition', '') # Keep existing condition if switching back to IF
-            elif selected_kw_name == 'ELSE IF Condition': # <-- เพิ่ม
-                 st.session_state[temp_args_key]['condition'] = step.get('args', {}).get('condition', '') # Keep existing condition
-            elif selected_kw and selected_kw.get('args'):
-                # Pre-fill with default values for the NEW keyword
-                for arg_item in selected_kw.get('args', []):
-                    # Ensure arg_item is a dict
-                    arg_info = arg_item if isinstance(arg_item, dict) else {'name': str(arg_item)}
-                    clean_arg_name = arg_info.get('name', '').strip('${}')
-                    if clean_arg_name:
-                        st.session_state[temp_args_key][clean_arg_name] = arg_info.get('default', '')
-            # Update previous keyword tracking
-            st.session_state[f"prev_kw_kw_{step['id']}"] = selected_kw_name
-            # Don't rerun here, let rendering continue
+            selected_kw_name = st.selectbox(
+                "Select Keyword",
+                all_kw_names,
+                index=all_kw_names.index(st.session_state[edit_kw_state_key]) if st.session_state[edit_kw_state_key] in all_kw_names else 0,
+                key=edit_kw_state_key
+            )
+            selected_kw = next((kw for kw in all_kws if kw['name'] == selected_kw_name), None)
 
+            # Check if keyword changed, reset temp args
+            if st.session_state.get(edit_kw_state_key) != st.session_state.get(f"prev_kw_kw_{step['id']}", ""):
+                st.session_state[temp_args_key] = {} # Reset args
+                if selected_kw_name == 'IF Condition':
+                    st.session_state[temp_args_key]['condition'] = step.get('args', {}).get('condition', '') # Keep existing condition if switching back to IF
+                elif selected_kw_name == 'ELSE IF Condition': # <-- เพิ่ม
+                    st.session_state[temp_args_key]['condition'] = step.get('args', {}).get('condition', '') # Keep existing condition
+                elif selected_kw and selected_kw.get('args'):
+                    # Pre-fill with default values for the NEW keyword
+                    for arg_item in selected_kw.get('args', []):
+                        # Ensure arg_item is a dict
+                        arg_info = arg_item if isinstance(arg_item, dict) else {'name': str(arg_item)}
+                        clean_arg_name = arg_info.get('name', '').strip('${}')
+                        if clean_arg_name:
+                            st.session_state[temp_args_key][clean_arg_name] = arg_info.get('default', '')
+                # Update previous keyword tracking
+                st.session_state[f"prev_kw_kw_{step['id']}"] = selected_kw_name
+                # Don't rerun here, let rendering continue
+            else:
+                # For API/CSV steps, use the existing keyword name (no dropdown)
+                selected_kw_name = step.get('keyword', '')
+                selected_kw = None  # API/CSV don't have keyword definitions in all_kws
         # --- Render Inputs based on Selected Keyword ---
         if selected_kw_name == 'IF Condition':
              st.markdown("**Condition:**")
@@ -712,9 +723,117 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
                                            placeholder="e.g., ${status} == 'PENDING'")
              st.session_state[temp_args_key]['condition'] = condition_val
 
-        elif selected_kw_name in ['END', 'ELSE']: # <-- เพิ่ม 'ELSE'
+        elif selected_kw_name in ['END', 'ELSE']:
              st.info(f"Marks the start of an '{selected_kw_name}' block. No arguments needed.")
-             st.session_state[temp_args_key] = {} # Ensure args are empty
+             st.session_state[temp_args_key] = {}
+          
+        # === SPECIAL HANDLING FOR API/CSV STEPS ===
+        elif step.get('type') in ['api_call', 'csv_import']:
+            step_type = step.get('type')
+            
+            if step_type == 'csv_import':
+                # CSV DataSource - Show dropdown to select
+                st.markdown("**📊 CSV Data Source:**")
+                csv_keywords = extract_csv_datasource_keywords(ws_state)
+                
+                if not csv_keywords:
+                    st.warning("⚠️ No CSV Data Sources found.")
+                else:
+                    ds_names = list(csv_keywords.keys())
+                    current_config = step.get('config', {})
+                    current_ds = current_config.get('ds_name', '')
+                    
+                    try:
+                        current_index = ds_names.index(current_ds) if current_ds in ds_names else 0
+                    except:
+                        current_index = 0
+                    
+                    selected_ds = st.selectbox(
+                        "Select Data Source",
+                        ds_names,
+                        index=current_index,
+                        key=f"edit_csv_{step['id']}"
+                    )
+                    
+                    if selected_ds != current_ds:
+                        step['config'] = csv_keywords[selected_ds]
+                        step['keyword'] = f"Import DataSource {selected_ds}"
+                
+                st.info("📊 CSV Data Sources don't require arguments.")
+            
+            elif step_type == 'api_call':
+                # API Service - Show dropdown and arguments
+                st.markdown("**🌐 API Service:**")
+                api_services = ws_state.get('api_services', [])
+                
+                if not api_services:
+                    st.warning("⚠️ No API Services found.")
+                else:
+                    service_names = [s.get('service_name', 'Untitled') for s in api_services]
+                    
+                    current_keyword = step.get('keyword', '')
+                    
+                    # Match โดยเทียบตรงๆ กับ service_name
+                    current_index = 0
+                    for i, service in enumerate(api_services):
+                        service_name_check = service.get('service_name', '')
+                        # เทียบแบบ exact match หรือ case-insensitive
+                        if service_name_check.lower() == current_keyword.lower():
+                            current_index = i
+                            break
+                        # หรือลอง match โดยไม่สน "Request " prefix
+                        keyword_without_request = current_keyword.replace('Request ', '').strip()
+                        if service_name_check.lower() == keyword_without_request.lower():
+                            current_index = i
+                            break
+                    
+                    selected_service_idx = st.selectbox(
+                        "Select API Service",
+                        range(len(api_services)),
+                        format_func=lambda x: service_names[x],
+                        index=current_index,
+                        key=f"edit_api_service_{step['id']}"
+                    )
+                    
+                    selected_service = api_services[selected_service_idx]
+                    service_name = selected_service.get('service_name', 'Untitled')
+                    
+                    new_keyword_name = f"{service_name.replace('_', ' ').title()}"
+                    if new_keyword_name != step.get('keyword'):
+                        step['keyword'] = new_keyword_name
+                    # Get arguments from args_list (from imported keywords)
+                    args_list = selected_service.get('args_list', [])
+                    # Clean argument names (remove ${} wrappers)
+                    required_args = [arg.strip('${}') for arg in args_list if arg.strip()]
+                    
+                    st.markdown("---")
+                    st.markdown("**🔧 Configure Arguments:**")
+                    
+                    if temp_args_key not in st.session_state:
+                        st.session_state[temp_args_key] = step.get('args', {}).copy()
+                                       
+                    if required_args:
+                        with st.container(border=True):
+                            st.markdown("**📋 Required Arguments**")
+                            
+                            for arg_name in required_args:
+                                arg_label = arg_name.replace('_', ' ').title()
+                                placeholder = f"Enter {arg_label}"
+                                
+                                # example = arg_data.get('example_value', '')
+                                # placeholder = f"e.g., {example}" if example else f"Enter {arg_label}"
+                                
+                                arg_value = st.text_input(
+                                    arg_label,
+                                    value=st.session_state[temp_args_key].get(arg_name, ''),
+                                    key=f"edit_api_arg_{step['id']}_{arg_name}",
+                                    placeholder=placeholder,
+                                    help=f"Argument: {arg_name}"
+                                )
+                                st.session_state[temp_args_key][arg_name] = arg_value
+                    else:
+                        st.info("This API service has no configurable arguments.")
+
 
         elif selected_kw and selected_kw.get('args'): # Normal Keyword Arguments
             st.markdown("**Arguments:**")
@@ -921,10 +1040,24 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
                 # Special handling for IF/ELSE IF/ELSE/END
                 if selected_kw_name == 'IF Condition':
                      final_args = {'condition': final_args.get('condition', '')}
-                elif selected_kw_name == 'ELSE IF Condition': # <-- เพิ่ม
+                elif selected_kw_name == 'ELSE IF Condition':
                      final_args = {'condition': final_args.get('condition', '')}
-                elif selected_kw_name in ['END', 'ELSE']: # <-- เพิ่ม 'ELSE'
-                      final_args = {} # Ensure END/ELSE have no args saved
+                elif selected_kw_name in ['END', 'ELSE']:
+                      final_args = {}
+                # === เพิ่มส่วนนี้: กรองเฉพาะ args ที่มาจาก API service ===
+                elif step.get('type') == 'api_call':
+                    # หา API service ที่เลือก
+                    api_services = ws_state.get('api_services', [])
+                    for service in api_services:
+                        if service.get('service_name') == selected_kw_name:
+                            # ดึง args_list ของ service นี้
+                            args_list = service.get('args_list', [])
+                            valid_arg_names = [arg.strip('${}') for arg in args_list if arg.strip()]
+                            
+                            # กรองเฉพาะ args ที่อยู่ใน args_list
+                            final_args = {k: v for k, v in final_args.items() if k in valid_arg_names}
+                            break
+                # === จบส่วนที่เพิ่ม ===
 
                 updated_data = {
                     "keyword": selected_kw_name,
@@ -1046,12 +1179,12 @@ def render_kw_factory_add_step_dialog():
 def render_kw_factory_api_csv_step_dialog():
     """
     Dialog to add CSV/API steps to a custom keyword.
-    (Copied from ui_crud.py)
+    (Updated: Grid Layout + No Close Button)
     """
     ws_state = st.session_state.studio_workspace
     context = st.session_state.get('kw_factory_api_csv_dialog_context', {})
     keyword_id = context.get("key") # This is the keyword_id
-    from .ui_crud import extract_csv_datasource_keywords
+    from .ui_common import extract_csv_datasource_keywords
 
     if not keyword_id:
         st.error("Error: Keyword context not found.")
@@ -1059,52 +1192,89 @@ def render_kw_factory_api_csv_step_dialog():
         st.rerun()
         return
 
+    # ✅ 1. เพิ่ม CSS ซ่อนปุ่ม X
+    st.markdown("""
+        <style>
+        div[data-testid="stDialog"] button[aria-label="Close"] {
+            display: none;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     def close_dialog():
         st.session_state['show_kw_factory_api_csv_dialog'] = False
         if 'kw_factory_api_csv_dialog_context' in st.session_state:
             del st.session_state['kw_factory_api_csv_dialog_context']
         st.rerun()
     
+    # ปุ่ม Back ทำหน้าที่เป็นตัวปิด Dialog หลัก
     if st.button("← Back to Editor"):
         close_dialog()
 
     st.info(f"Adding step to: **{kw_manager.get_keyword(keyword_id).get('name', '...')}**")
     
+    # --- Data Sources Section ---
     st.markdown("### 🗃️ Available Data Sources")
     csv_keywords = extract_csv_datasource_keywords(ws_state)
+    
     if not csv_keywords:
         st.caption("⚠️ No Data Sources found.")
     else:
-        for ds_name, ds_info in csv_keywords.items():
-            if st.button(f"📊 {ds_name}", key=f"kw_csv_{ds_name}", use_container_width=True):
-                keyword_name = f"Import DataSource {ds_name}"
-                new_step = {
-                    "id": str(uuid.uuid4()), "keyword": keyword_name, "args": {},
-                    "type": "csv_import", "config": ds_info
-                }
-                kw_manager.add_step(keyword_id, new_step)
-                close_dialog()
+        # ✅ 2. แสดงผลเป็น Grid (3 คอลัมน์)
+        items = list(csv_keywords.items())
+        # วนลูปทีละ 3 รายการ
+        for i in range(0, len(items), 3):
+            cols = st.columns(3)
+            for j in range(3):
+                if i + j < len(items):
+                    ds_name, ds_info = items[i + j]
+                    with cols[j]:
+                        if st.button(f"📊 {ds_name}", key=f"kw_csv_{ds_name}", use_container_width=True):
+                            keyword_name = f"Import DataSource {ds_name}"
+                            new_step = {
+                                "id": str(uuid.uuid4()), "keyword": keyword_name, "args": {},
+                                "type": "csv_import", "config": ds_info
+                            }
+                            kw_manager.add_step(keyword_id, new_step)
+                            close_dialog()
 
     st.markdown("---")
+    
+    # --- API Services Section ---
     st.markdown("### 🌐 Available API Services")
     api_services = ws_state.get('api_services', [])
+    
     if not api_services:
         st.caption("⚠️ No API Services found.")
     else:
-        for service in api_services:
-            service_name = service.get('service_name', 'Untitled')
-            if st.button(f"🔗 {service_name}", key=f"kw_api_{service['id']}", use_container_width=True):
-                keyword_name = f"Request {service_name.replace('_', ' ').title()}"
-                args = service.get('analyzed_fields', {})
-                required_args = [name for name, data in args.items() if data.get('is_argument')]
-                default_args = {'headeruser': '${USER_ADMIN}', 'headerpassword': '${PASSWORD_ADMIN}'}
-                default_args.update({arg: '' for arg in required_args})
-                new_step = {
-                    "id": str(uuid.uuid4()), "keyword": keyword_name, "args": default_args,
-                    "type": "api_call"
-                }
-                kw_manager.add_step(keyword_id, new_step)
-                close_dialog()
+        # ✅ ปรับ API ให้เป็น Grid ด้วยเพื่อความสวยงาม
+        for i in range(0, len(api_services), 3):
+            cols = st.columns(3)
+            for j in range(3):
+                if i + j < len(api_services):
+                    service = api_services[i + j]
+                    service_name = service.get('service_name', 'Untitled')
+                    with cols[j]:
+                        if st.button(f"🔗 {service_name}", key=f"kw_api_{service['id']}", use_container_width=True):
+                            keyword_name = f"{service_name.replace('_', ' ').title()}"
+                            # ใช้ args_list แทน analyzed_fields
+                            args_list = service.get('args_list', [])
+                            # Clean และสร้าง default_args
+                            default_args = {}
+                            for arg in args_list:
+                                if arg and arg.strip():
+                                    clean_arg = arg.strip('${}').strip()
+                                    if '=' in clean_arg:
+                                        clean_arg = clean_arg.split('=')[0].strip()
+                                    if clean_arg:
+                                        default_args[clean_arg] = ''
+
+                            new_step = {
+                                "id": str(uuid.uuid4()), "keyword": keyword_name, "args": default_args,
+                                "type": "api_call"
+                            }
+                            kw_manager.add_step(keyword_id, new_step)
+                            close_dialog()
 
 # ======= DIALOG: Quick Fill Form =======
 @st.dialog("Quick Template: Fill Form", width="large", dismissible=False)

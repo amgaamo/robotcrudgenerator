@@ -9,10 +9,8 @@ from .utils import get_clean_locator_name, parse_robot_keywords
 from .file_manager import read_robot_variables_from_content, create_new_robot_file, append_robot_content_intelligently, scan_robot_project
 from .keyword_categorizer import categorize_keywords, get_category_stats, get_expansion_config, get_category_priority
 from .menu_locator_manager import render_menu_locator_manager
-# Import ฟังก์ชัน Checkbox จาก module ที่แยกไว้
 from .checkbox_keywords_generator import analyze_checkbox_structure, generate_checkbox_template_and_keyword
 
-# HTML Parser
 try:
     from .html_parser import HTMLLocatorParser
     PARSER_AVAILABLE = True
@@ -24,8 +22,17 @@ except ImportError:
 # ========================================================================
 
 def html_editor_dialog():
+    """
+    Dialog function definition only.
+    Called by app.py controller logic.
+    """
     ws_state = st.session_state.studio_workspace
-    page_index = ws_state['editing_html_index']
+    page_index = ws_state.get('editing_html_index')
+    
+    # Safety check
+    if page_index is None or page_index >= len(ws_state.get('html_pages', [])):
+        return
+
     page_data = ws_state['html_pages'][page_index]
 
     @st.dialog(f"Editing HTML for: {page_data['name']}")
@@ -128,6 +135,8 @@ def append_checkbox_template_to_file(file_path):
 
 def render_resources_view_new():
     ws_state = st.session_state.studio_workspace
+    
+    # Initialize editing index if not present
     if 'editing_html_index' not in ws_state: ws_state['editing_html_index'] = None
 
     # --- Auto-load locators logic ---
@@ -153,13 +162,13 @@ def render_resources_view_new():
         else: st.session_state.locators_auto_loaded = True
 
     # ------------------------------------------------------------------
-    # TWO COLUMN LAYOUT (เหมือนเดิม)
+    # ROW 1: KEYWORDS & STATIC LOCATORS
     # ------------------------------------------------------------------
     panel_grid = st.columns([1, 1], gap="large")
 
     # --- LEFT: KEYWORDS ---
     with panel_grid[0]:
-        st.markdown("#### <i class='fa-solid fa-cubes'></i> 📦 Common Keywords", unsafe_allow_html=True)
+        st.markdown("#### <i class='fa-solid fa-cubes'></i> Common Keywords", unsafe_allow_html=True)
         with st.container(border=True):
             curr_kw = ws_state.get('common_keyword_path', 'N/A')
             st.caption(f"Loaded from: **{curr_kw}**")
@@ -180,7 +189,6 @@ def render_resources_view_new():
                     except Exception as e: st.error(f"Failed to parse: {e}")
 
             if ws_state.get('keywords'):
-                # CSS for spacing
                 st.markdown("""<style>[data-testid="stExpander"] { margin-bottom: 1px !important; }</style>""", unsafe_allow_html=True)
                 
                 cats = categorize_keywords(ws_state['keywords'])
@@ -221,9 +229,9 @@ def render_resources_view_new():
                                     args_str = " ".join([f"`{a['name']}`" for a in kw.get('args', [])]) if kw.get('args') else "_None_"
                                     st.markdown(f"**Args:** {args_str}")
 
-    # --- RIGHT: STATIC LOCATORS (รวม Add from HTML ไว้ที่นี่ตามเดิม) ---
+    # --- RIGHT: STATIC LOCATORS ---
     with panel_grid[1]:
-        st.markdown("#### <i class='fa-solid fa-bullseye'></i> 🔍 Locators", unsafe_allow_html=True)
+        st.markdown("#### <i class='fa-solid fa-bullseye'></i> Locators", unsafe_allow_html=True)
         with st.container(border=True):
             with st.expander("🍔 Menu Locator Management", expanded=False):
                 render_menu_locator_manager()
@@ -243,7 +251,7 @@ def render_resources_view_new():
                         except: pass
                     if is_new: st.success(f"Loaded {cnt} new locators."); st.rerun()
 
-            # --- Add from HTML (กลับมาอยู่ที่นี่) ---
+            # --- Add from HTML ---
             with st.expander("📄 Add from HTML", expanded=True):
                 for i, page in enumerate(ws_state['html_pages']):
                     c1, c2, c3, c4 = st.columns([1.8, 2.5, 1.2, 0.8])
@@ -299,14 +307,12 @@ def render_resources_view_new():
                                             new_locs += 1
                         st.success(f"Found {new_locs} new locators and {new_cbs} new checkboxes."); st.rerun()
                     else: st.error("Parser missing")
-
-    # --- HTML Editor Dialog (Trigger check) ---
-    if ws_state.get('editing_html_index') is not None:
-        if ws_state['editing_html_index'] < len(ws_state['html_pages']):
-            html_editor_dialog()
+    
+    # ❌ REMOVED: if ws_state.get('editing_html_index') is not None: html_editor_dialog()
+    # เพราะใน app.py มีการเรียกใช้แล้ว
 
     # ------------------------------------------------------------------
-    # ROW 3: STAGING AREA (FULL WIDTH) - อยู่ล่างสุด
+    # ROW 3: STAGING AREA
     # ------------------------------------------------------------------
     if ws_state.get('locators') or ws_state.get('checkbox_locators'):
         for idx, loc in enumerate(ws_state['locators']):
@@ -324,7 +330,6 @@ def render_resources_view_new():
                 by_file = {}
                 for l in file_locs: by_file.setdefault(l['page_name'], []).append(l)
                 
-                # CSS for Pills
                 st.markdown("""<style>.locator-grid-container { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; } .locator-pill { background-color: rgba(88, 166, 255, 0.1); border: 1px solid rgba(88, 166, 255, 0.2); color: #cbd5e1; padding: 5px 10px; border-radius: 12px; font-family: monospace; font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }</style>""", unsafe_allow_html=True)
 
                 for fname, locs in by_file.items():
@@ -353,7 +358,6 @@ def render_resources_view_new():
             if not html_by_page and not cb_by_page:
                 st.caption("No locators added from HTML yet.")
             else:
-                # CSS for Table
                 st.markdown("""<style>.locator-header { display: grid; grid-template-columns: 50% 42% 8%; font-weight: 900; padding: 8px 4px; background-color: rgba(88, 166, 255, 0.15); border: 1px solid rgba(88, 166, 255, 0.3); color: #a3c9ff; text-align: center; border-radius: 4px; margin-bottom: 8px; font-size: 0.9rem; } input[key*="loc_name_"], input[key*="loc_value_"] { font-size: 0.7rem !important; font-family: monospace !important; }</style>""", unsafe_allow_html=True)
 
                 for pname in pnames:
@@ -364,7 +368,6 @@ def render_resources_view_new():
 
                     title = f"📄 **{pname}** ({len(locs_in_page)} locators" + (f", {len(cbs_in_page)} checkboxes)" if cbs_in_page else ")")
                     with st.expander(title, expanded=True):
-                        # Checkbox Button
                         if cbs_in_page:
                             if st.button(f"✅ Found {len(cbs_in_page)} Checkbox(es) - Click to Suggest Handling", key=f"gen_cb_btn_{pname}", type="primary", use_container_width=True):
                                 pg = next((p for p in ws_state['html_pages'] if p['name'] == pname), None)
@@ -373,14 +376,11 @@ def render_resources_view_new():
                                     st.rerun()
                             st.markdown("---")
                         
-                        # Locators Table
                         if locs_in_page:
                             mid = (len(locs_in_page) + 1) // 2
                             l_list = locs_in_page[:mid]
                             r_list = locs_in_page[mid:]
-                            
                             c_l, c_r = st.columns([1, 1], gap="medium")
-                            
                             for col, items in [(c_l, l_list), (c_r, r_list)]:
                                 with col:
                                     with st.container(border=True):
@@ -391,8 +391,7 @@ def render_resources_view_new():
                                             l_data['name'] = sc1.text_input("N", l_data['name'], key=f"ln_{l_id}", label_visibility="collapsed")
                                             l_data['value'] = sc2.text_input("V", l_data['value'], key=f"lv_{l_id}", label_visibility="collapsed")
                                             if sc3.button("🗑️", key=f"ld_{l_id}"):
-                                                ws_state['locators'] = [x for x in ws_state['locators'] if x['id'] != l_id]
-                                                st.rerun()
+                                                ws_state['locators'] = [x for x in ws_state['locators'] if x['id'] != l_id]; st.rerun()
 
             show_checkbox_generator_ui()
 
@@ -404,7 +403,6 @@ def render_resources_view_new():
             st.session_state.locator_save_option = st.radio("Save Mode", ["Append to Existing File", "Create New File"], horizontal=True, label_visibility="collapsed")
             save_opt = st.session_state.locator_save_option
 
-            # Prepare string
             html_locs_final = [l for l in ws_state['locators'] if l.get('page_name') in pnames]
             loc_str = ""
             if html_locs_final:
