@@ -15,17 +15,37 @@ def _load_default_keywords():
     # Define menu locators to exclude from the main list
     MENU_LOCATOR_NAMES = ['homemenu', 'mainmenu', 'submenu', 'menuname']
     
-    # Define block markers
-    START_MARKER = "### All Menu Locator ###"
-    END_MARKER = "### All Menu Locator (END) ###"
-
     try:
-        default_file_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'commonkeywords')
+        # 1. ใช้ Pathlib เพื่อหา path ที่ถูกต้องแม่นยำกว่าบน macOS
+        # base_dir จะชี้ไปที่โฟลเดอร์ modules/
+        base_dir = Path(__file__).resolve().parent
         
-        with open(default_file_path, 'r', encoding='utf-8') as f:
+        # assets_dir จะชี้ไปที่ assets/ (ถอยออกมา 1 ชั้นจาก modules)
+        assets_dir = base_dir.parent / 'assets'
+        
+        # 2. ลองหาไฟล์โดยรองรับทั้งแบบมีนามสกุลและไม่มีนามสกุล
+        possible_filenames = ['commonkeywords', 'commonkeywords.resource', 'commonkeywords.txt']
+        target_file = None
+        
+        for fname in possible_filenames:
+            temp_path = assets_dir / fname
+            if temp_path.exists():
+                target_file = temp_path
+                break
+        
+        if not target_file:
+            # ถ้าหาไม่เจอเลย ให้ลอง print path ออกมาดู (Debug)
+            print(f"⚠️ Debug: Could not find commonkeywords in {assets_dir}")
+            st.warning(f"Default keywords file not found in {assets_dir}. Please checks assets folder.")
+            return [], [], {}, None
+
+        # 3. อ่านไฟล์
+        with open(target_file, 'r', encoding='utf-8') as f:
             content = f.read()
         
         keywords = parse_robot_keywords(content)
+        # ต้องแก้ import read_robot_variables_from_content ให้ถูกต้องด้วยถ้ายังไม่ได้ import
+        # จากโค้ดเดิมคุณ import มาแล้ว
         all_variables = read_robot_variables_from_content(content)
         
         # แยก menu locators และ common variables
@@ -38,12 +58,10 @@ def _load_default_keywords():
                 menu_locators[var_name] = v
             else:
                 common_variables.append(v)
-                
-        return keywords, common_variables, menu_locators, "Default Keywords"
+        
+        # ส่งชื่อไฟล์ที่เจอจริงๆ กลับไปด้วย เพื่อให้ UI แสดงถูก
+        return keywords, common_variables, menu_locators, target_file.name
 
-    except FileNotFoundError:
-        st.warning("Default keywords file not found. Please upload one manually.")
-        return [], [], {}, None
     except Exception as e:
         st.error(f"Error loading default keywords: {e}")
         return [], [], {}, None
