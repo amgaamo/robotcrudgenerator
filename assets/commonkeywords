@@ -50,17 +50,19 @@ ${CONF_TEMPEMAIL_PASSEMAIL}     evnfpzerwhejxefd
 
 
 ### All Menu Locator ###
-${homemenu}    //*[contains(@href, '/mainmenu/home') and contains(@class,'brand')]
-
-&{mainmenu}    configuration=//*[@title="Configuration"]
-
-&{submenu}    usermgt=//a[contains(@title, 'User Management')]
-...            companyMgt=//a[contains(@title, 'Company Management')]
-
-&{menuname}    usermgt=User Management
-...             companyMgt=Company Management
-
-### All Menu Locator (END) ###
+${homemenu}    //*[contains(@href, '/mainmenu/home') or contains(@class,'brand')]
+&{mainmenu}
+    ...    configuration=//*[@title="configuration"]
+    ...    config=//*[@title="config"]
+&{submenu}
+    ...    usermgt=//a[contains(@title, 'User Management')]
+    ...    companyMgt=//a[contains(@title, 'Company Management')]
+    ...    rolemgmt=//a[contains(@title, 'Role Management')]
+&{menuname}
+    ...    usermgt=User Management
+    ...    companyMgt=Company Management
+    ...    rolMgmt=Role Management
+### End Menu Locator ###
 
 *** Keywords ***
 Setup ZAP And Browser

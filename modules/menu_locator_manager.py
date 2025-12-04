@@ -5,8 +5,9 @@ Menu Locator Manager Module
 
 import streamlit as st
 import uuid
+import os
+import re
 from typing import Dict, Any
-
 
 def render_menu_locator_manager():
     """แสดง UI สำหรับจัดการ Menu Locators"""
@@ -37,9 +38,14 @@ def render_menu_locator_manager():
     # ปุ่ม Save Changes
     st.divider()
     col1, col2 = st.columns([1, 4])
+    
+    # รับค่าการกดปุ่ม (ต้องย่อหน้าเข้าใน with col1:)
     with col1:
-        if st.button("💾 Save to File", type="primary", use_container_width=True, key="save_menu_locators_btn"):
-            save_menu_locators_to_file()
+        is_save_clicked = st.button("💾 Save to File", type="primary", use_container_width=True, key="save_menu_locators_btn")
+    
+    # ตรวจสอบการกดปุ่ม (ต้องอยู่ระดับเดียวกับ with, ไม่ใช่ข้างใน with)
+    if is_save_clicked:
+        save_menu_locators_to_file()  # <--- จุดที่แก้ IndentationError (ต้องย่อหน้าเข้ามา)
 
 def render_menu_section(menu_key: str, menu_label: str, menu_type: str, menu_locators: Dict):
     """แสดง section ของแต่ละประเภทเมนู"""
@@ -96,7 +102,6 @@ def render_dict_menu(menu_key: str, menu_data: Dict):
     
     # แสดงรายการปัจจุบันเป็นการ์ด
     if items:
-        # จำกัดความสูงด้วย container
         with st.container(height=300):
             for key, value in items.items():
                 render_menu_item_card(menu_key, key, value)
@@ -134,48 +139,34 @@ def render_dict_menu(menu_key: str, menu_data: Dict):
 def render_menu_item_card(menu_key: str, item_key: str, item_value: str):
     """แสดงการ์ดของแต่ละรายการพร้อมปุ่ม Edit/Delete"""
     
-    # ตรวจสอบว่ากำลัง edit อยู่หรือไม่
     edit_state_key = f"editing_{menu_key}_{item_key}"
     is_editing = st.session_state.get(edit_state_key, False)
     
     if is_editing:
-        # โหมดแก้ไข
         col1, col2, col3, col4 = st.columns([2, 3, 1, 1])
-        
         with col1:
             new_key = st.text_input("Key", value=item_key, key=f"edit_key_{menu_key}_{item_key}", label_visibility="collapsed")
-        
         with col2:
             new_value = st.text_input("Value", value=item_value, key=f"edit_value_{menu_key}_{item_key}", label_visibility="collapsed")
-        
         with col3:
             if st.button("✅", key=f"save_{menu_key}_{item_key}", help="Save", use_container_width=True):
                 update_menu_item(menu_key, item_key, new_key.strip(), new_value.strip())
                 st.session_state[edit_state_key] = False
                 st.rerun()
-        
         with col4:
             if st.button("❌", key=f"cancel_{menu_key}_{item_key}", help="Cancel", use_container_width=True):
                 st.session_state[edit_state_key] = False
                 st.rerun()
-    
     else:
-        # โหมดแสดงผล
         col1, col2, col3, col4 = st.columns([2, 3, 1, 1])
-        
-        with col1:
-            st.markdown(f"**`{item_key}`**")
-        
+        with col1: st.markdown(f"**`{item_key}`**")
         with col2:
-            # จำกัดความยาวการแสดงผล
             display_value = item_value if len(item_value) <= 50 else item_value[:47] + "..."
             st.text(display_value)
-        
         with col3:
             if st.button("✏️", key=f"edit_{menu_key}_{item_key}", help="Edit", use_container_width=True):
                 st.session_state[edit_state_key] = True
                 st.rerun()
-        
         with col4:
             if st.button("🗑️", key=f"delete_{menu_key}_{item_key}", help="Delete", use_container_width=True):
                 delete_menu_item(menu_key, item_key)
@@ -183,45 +174,27 @@ def render_menu_item_card(menu_key: str, item_key: str, item_value: str):
 
 
 def add_menu_item(menu_key: str, item_key: str, item_value: str):
-    """เพิ่มรายการใหม่ใน menu dict"""
-    
     if menu_key not in st.session_state.studio_workspace['menu_locators']:
         st.session_state.studio_workspace['menu_locators'][menu_key] = {
-            'name': menu_key,
-            'value': {},
-            'type': 'dict'
+            'name': menu_key, 'value': {}, 'type': 'dict'
         }
-    
     menu_data = st.session_state.studio_workspace['menu_locators'][menu_key]
-    
     if 'value' not in menu_data or not isinstance(menu_data['value'], dict):
         menu_data['value'] = {}
-    
     menu_data['value'][item_key] = item_value
 
 
 def update_menu_item(menu_key: str, old_key: str, new_key: str, new_value: str):
-    """อัปเดตรายการใน menu dict"""
-    
     menu_data = st.session_state.studio_workspace['menu_locators'][menu_key]
     items = menu_data.get('value', {})
-    
-    # ลบ key เดิม
-    if old_key in items:
-        del items[old_key]
-    
-    # เพิ่ม key ใหม่
+    if old_key in items: del items[old_key]
     items[new_key] = new_value
-    
     menu_data['value'] = items
 
 
 def delete_menu_item(menu_key: str, item_key: str):
-    """ลบรายการจาก menu dict"""
-    
     menu_data = st.session_state.studio_workspace['menu_locators'][menu_key]
     items = menu_data.get('value', {})
-    
     if item_key in items:
         del items[item_key]
         menu_data['value'] = items
@@ -230,67 +203,100 @@ def delete_menu_item(menu_key: str, item_key: str):
 
 def save_menu_locators_to_file():
     """
-    บันทึก menu locators กลับไปยังไฟล์
-    (FIXED: บันทึกทั้งไฟล์ default และไฟล์ใน project path)
+    บันทึก menu locators ไปยัง 2 ที่ (ถ้ามี):
+    1. Default Asset File (master)
+    2. Project Resource File (active project)
+    โดยใช้ Logic Regex Replacement แบบเดียวกัน
     """
     
-    from modules.file_manager import update_menu_locators_in_file
-    import os
-    
-    # 1. ดึงข้อมูล locators จาก session state
+    # 1. Prepare Data
     menu_locators = st.session_state.studio_workspace.get('menu_locators', {})
     if not menu_locators:
         st.error("No menu locators data to save.")
         return
 
-    # --- Flag ติดตามความสำเร็จ ---
-    saved_all_files = True
+    # 2. Generate Robot Content Block
+    lines = []
+    lines.append("### All Menu Locator ###")
+
+    # Homemenu (Safe Syntax)
+    homemenu_val = menu_locators.get('homemenu', {}).get('value', '')
+    default_home_xpath = "xpath=//div[@id='home']"
+    lines.append(f"${{homemenu}}    {homemenu_val if homemenu_val else default_home_xpath}")
+
+    # Helper for Dicts
+    def append_dict(key_name):
+        lines.append(f"&{{{key_name}}}")
+        items = menu_locators.get(key_name, {}).get('value', {})
+        if items:
+            for k, v in items.items():
+                lines.append(f"    ...    {k}={v}")
+        else:
+            lines.append("    ...    # Empty")
+
+    append_dict('mainmenu')
+    append_dict('submenu')
+    append_dict('menuname')
+
+    lines.append("### End Menu Locator ###")
+    new_block_content = "\n".join(lines)
+
+    # 3. Define Targets
+    targets = []
     
+    # Target A: Default Asset File
+    default_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'commonkeywords')
+    if os.path.exists(default_path):
+        targets.append(("Default Asset", default_path))
+    
+    # Target B: Project Resource File
+    project_path = st.session_state.get('project_path')
+    if project_path:
+        project_file = os.path.join(project_path, 'resources', 'commonkeywords.resource')
+        if os.path.exists(os.path.dirname(project_file)):
+            targets.append(("Project File", project_file))
+
+    if not targets:
+        st.error("No valid target files found to save.")
+        return
+
+    # 4. Execute Save for All Targets
+    success_count = 0
+    for label, path in targets:
+        if _write_menu_block_to_file(path, new_block_content):
+            st.toast(f"✅ Saved to {label}", icon="💾")
+            success_count += 1
+        else:
+            st.error(f"❌ Failed to save to {label}")
+
+    if success_count == len(targets):
+        st.success(f"Successfully updated {success_count} file(s)!")
+
+def _write_menu_block_to_file(file_path, new_content_block):
+    """Helper function to perform the regex replacement on a file"""
     try:
-        # --- 2. บันทึกไปยังไฟล์ Default (Master) ---
-        default_file_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'commonkeywords')
-        
-        if not os.path.exists(default_file_path):
-            st.warning(f"Default file not found at: {default_file_path}. Skipping.")
-            saved_all_files = False
-        else:
-            success_default = update_menu_locators_in_file(default_file_path, menu_locators)
-            if success_default:
-                st.toast("✅ Saved to Default: assets/commonkeywords", icon="💾")
-            else:
-                st.error(f"❌ Failed to save to Default: {default_file_path}")
-                saved_all_files = False
+        if not os.path.exists(file_path):
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write("*** Settings ***\n\n*** Variables ***\n\n" + new_content_block + "\n")
+            return True
 
-        # --- 3. บันทึกไปยังไฟล์ Project (ที่กำลัง Active) ---
-        
-        # ดึง project_path จาก st.session_state (ซึ่งถูกตั้งค่าใน session_manager.py)
-        project_path = st.session_state.get('project_path') 
-        
-        if not project_path:
-            st.info("No active project path found. Skipping save to project file.")
-            # ไม่ถือว่าเป็น Error ถ้าไม่มีโปรเจกต์
-        else:
-            # สร้าง path ไปยัง commonkeywords.resource ภายในโปรเจกต์
-            project_common_keyword_path = os.path.join(project_path, 'resources', 'commonkeywords.resource')
-            
-            if not os.path.exists(project_common_keyword_path):
-                st.warning(f"Project file not found at: {project_common_keyword_path}. Skipping.")
-                # หากไฟล์ในโปรเจกต์ไม่มีจริง ก็ไม่ควรถือว่า Error
-            else:
-                success_project = update_menu_locators_in_file(project_common_keyword_path, menu_locators)
-                
-                if success_project:
-                    project_name = os.path.basename(project_path)
-                    st.toast(f"✅ Saved to Project: {project_name}/resources/commonkeywords.resource", icon="📁")
-                else:
-                    st.error(f"❌ Failed to save to Project: {project_common_keyword_path}")
-                    saved_all_files = False
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
 
-        # --- 4. สรุปผล ---
-        if saved_all_files:
-            st.success("✅ Menu locators saved successfully to all targets!")
+        pattern = r"(### All Menu Locator ###)(.*?)(### End Menu Locator ###)"
+        
+        if re.search(pattern, content, re.DOTALL):
+            updated_content = re.sub(pattern, new_content_block, content, flags=re.DOTALL)
         else:
-            st.error("❌ Failed to save to one or more targets. Check messages above.")
-            
+            if "*** Variables ***" in content:
+                updated_content = content.replace("*** Variables ***", f"*** Variables ***\n\n{new_content_block}\n")
+            else:
+                updated_content = content + "\n\n" + new_content_block
+
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(updated_content)
+        
+        return True
     except Exception as e:
-        st.error(f"An error occurred during save: {e}")
+        print(f"Error saving menu block: {e}")
+        return False
