@@ -1,0 +1,191 @@
+*** Settings ***
+Documentation    Dictionary Style Fake Data Keywords
+Library          library/fakerDataGenerator.py
+
+*** Keywords ***
+# ============== ข้อมูลส่วนตัว ==============
+Random Person Data
+    [Documentation]    Generate random person data and set global variables
+    [Arguments]    ${locale}=Thai
+    ${person}=    Generate Person          ${locale}
+    ${id_card}=   Generate Thai ID Card
+    
+    
+    Set Global Variable    ${GLOBAL_RANDOM_FULLNAME}         ${person}[full_name]
+    Set Global Variable    ${GLOBAL_RANDOM_FIRSTNAME}        ${person}[first_name]
+    Set Global Variable    ${GLOBAL_RANDOM_LASTNAME}         ${person}[last_name]
+    Set Global Variable    ${GLOBAL_RANDOM_EMAIL}            ${person}[email]
+    Set Global Variable    ${GLOBAL_RANDOM_PHONE}            ${person}[phone]
+    Set Global Variable    ${GLOBAL_RANDOM_MOBILE}           ${person}[mobile]
+    Set Global Variable    ${GLOBAL_RANDOM_AGE}              ${person}[age]
+    Set Global Variable    ${GLOBAL_RANDOM_BIRTHDATE}        ${person}[birth_date]
+    Set Global Variable    ${GLOBAL_RANDOM_GENDER}           ${person}[gender]
+    Set Global Variable    ${GLOBAL_RANDOM_THAI_IDCARD}      ${id_card}
+    Set Global Variable    ${GLOBAL_RANDOM_PASSPORT}         ${person}[passport]
+
+Random Address Data
+    [Documentation]    Generate random address data and set global variables
+    [Arguments]    ${locale}=Thai
+    ${address}=    Generate Address    ${locale}
+    
+    Set Global Variable    ${GLOBAL_RANDOM_STREET}       ${address}[street_address]
+    Set Global Variable    ${GLOBAL_RANDOM_CITY}         ${address}[city]
+    Set Global Variable    ${GLOBAL_RANDOM_DISTRICT}     ${address}[district]
+    Set Global Variable    ${GLOBAL_RANDOM_PROVINCE}     ${address}[province]
+    Set Global Variable    ${GLOBAL_RANDOM_POSTCODE}     ${address}[postcode]
+    Set Global Variable    ${GLOBAL_RANDOM_COUNTRY}      ${address}[country]
+    Set Global Variable    ${GLOBAL_RANDOM_FULLADDRESS}  ${address}[full_address]
+
+# ============== ข้อมูลบริษัท ==============
+Random Company Data
+    [Documentation]    Generate random company data and set global variables
+    [Arguments]    ${locale}=Thai
+    ${company}=    Generate Company    ${locale}
+    
+    Set Global Variable    ${GLOBAL_RANDOM_COMPANYNAME}        ${company}[company_name]
+    Set Global Variable    ${GLOBAL_RANDOM_BUSINESSTYPE}       ${company}[business_type]
+    Set Global Variable    ${GLOBAL_RANDOM_COMPANYADDRESS}     ${company}[address]
+    Set Global Variable    ${GLOBAL_RANDOM_COMPANYCITY}        ${company}[city]
+    Set Global Variable    ${GLOBAL_RANDOM_COMPANYPHONE}       ${company}[phone]
+    Set Global Variable    ${GLOBAL_RANDOM_COMPANYEMAIL}       ${company}[email]
+    Set Global Variable    ${GLOBAL_RANDOM_COMPANYWEBSITE}     ${company}[website]
+    Set Global Variable    ${GLOBAL_RANDOM_TAXID}              ${company}[tax_id]
+    Set Global Variable    ${GLOBAL_RANDOM_REGISTRATION}       ${company}[registration_number]
+    Set Global Variable    ${GLOBAL_RANDOM_EMPLOYEECOUNT}      ${company}[employee_count]
+    Set Global Variable    ${GLOBAL_RANDOM_ESTABLISHYEAR}      ${company}[established_year]
+    Set Global Variable    ${GLOBAL_RANDOM_CAPITAL}            ${company}[capital]
+
+# ============== เลข Random ที่ไม่ซ้ำ ==============
+Random Unique ID Data
+    [Documentation]    Generate unique ID and set global variable
+    ${id}=    Generate Unique ID
+    Set Global Variable    ${GLOBAL_RANDOM_UNIQUEID}    ${id}
+
+Random UUID Data
+    [Documentation]    Generate UUID and set global variable
+    ${uuid}=    Generate UUID
+    Set Global Variable    ${GLOBAL_RANDOM_UUID}    ${uuid}
+
+Random Reference Data
+    [Documentation]    Generate reference number and set global variable
+    [Arguments]    ${prefix}=REF
+    ${ref}=    Generate Unique Reference    ${prefix}
+    Set Global Variable    ${GLOBAL_RANDOM_REFERENCE}    ${ref}
+
+Random Code Data
+    [Documentation]    Generate random code and set global variable
+    [Arguments]    ${length}=8
+    ${code}=    Generate Unique Code    ${length}
+    Set Global Variable    ${GLOBAL_RANDOM_CODE}    ${code}
+
+# ============== เบอร์โทรไทยและเลขตามความยาว ==============
+Random Thai Phone Data
+    [Documentation]    Generate Thai phone and set global variables
+    [Arguments]    ${mobile_digits}=10    ${phone_digits}=9
+    ${mobile}=     Generate Thai Phone Number    ${mobile_digits}
+    ${phoneno}=    Generate Thai Phone Number    ${phone_digits}
+    
+    Set Global Variable    ${GLOBAL_RANDOM_MOBILE}      ${mobile}
+    Set Global Variable    ${GLOBAL_RANDOM_PHONENUM}    ${phoneno}
+
+Random Number Data
+    [Documentation]    Generate random numbers with different lengths and set global variables
+    [Arguments]    ${length5}=5    ${length8}=8    ${length10}=10
+    ${num5}=     Generate Random Number With Length    ${length5}
+    ${num8}=     Generate Random Number With Length    ${length8}
+    ${num10}=    Generate Random Number With Length    ${length10}
+    
+    Set Global Variable    ${GLOBAL_RANDOM_NUMBER5}     ${num5}
+    Set Global Variable    ${GLOBAL_RANDOM_NUMBER8}     ${num8}
+    Set Global Variable    ${GLOBAL_RANDOM_NUMBER10}    ${num10}
+
+Random Text Data
+    [Documentation]    Generate random text and set global variables
+    [Arguments]    ${length}=8    ${include_numbers}=${True}
+    ${text}=    Generate Random Text With Length    ${length}    ${include_numbers}
+    Set Global Variable    ${GLOBAL_RANDOM_TEXT}    ${text}
+
+# ============== ข้อมูลการเงิน ==============
+Random Bank Data
+    [Documentation]    Generate bank account data and set global variables
+    [Arguments]    ${locale}=Thai
+    ${bank}=    Generate Bank Account    ${locale}
+    
+    Set Global Variable    ${GLOBAL_RANDOM_BANKNAME}          ${bank}[bank_name]
+    Set Global Variable    ${GLOBAL_RANDOM_ACCOUNTNUMBER}     ${bank}[account_number]
+    Set Global Variable    ${GLOBAL_RANDOM_ACCOUNTNAME}       ${bank}[account_name]
+    Set Global Variable    ${GLOBAL_RANDOM_ACCOUNTTYPE}       ${bank}[account_type]
+    Set Global Variable    ${GLOBAL_RANDOM_BALANCE}           ${bank}[balance]
+    Set Global Variable    ${GLOBAL_RANDOM_CURRENCY}          ${bank}[currency]
+    Set Global Variable    ${GLOBAL_RANDOM_BRANCHCODE}        ${bank}[branch_code]
+
+Random Credit Card Data
+    [Documentation]    Generate credit card data and set global variables
+    ${card}=    Generate Credit Card
+    
+    Set Global Variable    ${GLOBAL_RANDOM_CARDNUMBER}    ${card}[card_number]
+    Set Global Variable    ${GLOBAL_RANDOM_CARDTYPE}      ${card}[card_type]
+    Set Global Variable    ${GLOBAL_RANDOM_EXPIRYDATE}    ${card}[expiry_date]
+    Set Global Variable    ${GLOBAL_RANDOM_CVV}           ${card}[cvv]
+    Set Global Variable    ${GLOBAL_RANDOM_CARDHOLDER}    ${card}[holder_name]
+    Set Global Variable    ${GLOBAL_RANDOM_CREDITLIMIT}   ${card}[credit_limit]
+
+
+# ============== ข้อมูลติดต่อ ==============
+Random Contact Data
+    [Documentation]    Generate contact data and set global variables
+    [Arguments]    ${locale}=Thai
+    ${contact}=    Generate Contact Info    ${locale}
+    
+    Set Global Variable    ${GLOBAL_RANDOM_CONTACTEMAIL}       ${contact}[email]
+    Set Global Variable    ${GLOBAL_RANDOM_CONTACTPHONE}       ${contact}[phone]
+    Set Global Variable    ${GLOBAL_RANDOM_CONTACTMOBILE}      ${contact}[mobile]
+    Set Global Variable    ${GLOBAL_RANDOM_CONTACTFAX}         ${contact}[fax]
+    Set Global Variable    ${GLOBAL_RANDOM_CONTACTWEBSITE}     ${contact}[website]
+    Set Global Variable    ${GLOBAL_RANDOM_FACEBOOK}           ${contact}[social_media][facebook]
+    Set Global Variable    ${GLOBAL_RANDOM_TWITTER}            ${contact}[social_media][twitter]
+    Set Global Variable    ${GLOBAL_RANDOM_INSTAGRAM}          ${contact}[social_media][instagram]
+    Set Global Variable    ${GLOBAL_RANDOM_LINEID}             ${contact}[social_media][line_id]
+
+# ============== ข้อมูลธุรกรรม ==============
+Random Transaction Data
+    [Documentation]    Generate transaction data and set global variables
+    ${transaction}=    Generate Financial Transaction
+    
+    Set Global Variable    ${GLOBAL_RANDOM_TRANSACTIONID}       ${transaction}[transaction_id]
+    Set Global Variable    ${GLOBAL_RANDOM_TRANSACTIONTYPE}     ${transaction}[type]
+    Set Global Variable    ${GLOBAL_RANDOM_AMOUNT}              ${transaction}[amount]
+    Set Global Variable    ${GLOBAL_RANDOM_TXNCURRENCY}         ${transaction}[currency]
+    Set Global Variable    ${GLOBAL_RANDOM_STATUS}              ${transaction}[status]
+    Set Global Variable    ${GLOBAL_RANDOM_TRANSACTIONDATE}     ${transaction}[date]
+    Set Global Variable    ${GLOBAL_RANDOM_REFNUMBER}           ${transaction}[reference_number]
+    Set Global Variable    ${GLOBAL_RANDOM_DESCRIPTION}         ${transaction}[description]
+
+# ============== ข้อมูลสินค้า ==============
+Random Product Data
+    [Documentation]    Generate product data and set global variables
+    [Arguments]    ${locale}=Thai
+    ${product}=    Generate Product    ${locale}
+    
+    Set Global Variable    ${GLOBAL_RANDOM_PRODUCTID}       ${product}[product_id]
+    Set Global Variable    ${GLOBAL_RANDOM_PRODUCTNAME}     ${product}[product_name]
+    Set Global Variable    ${GLOBAL_RANDOM_CATEGORY}        ${product}[category]
+    Set Global Variable    ${GLOBAL_RANDOM_PRODUCTBRAND}    ${product}[brand]
+    Set Global Variable    ${GLOBAL_RANDOM_PRICE}           ${product}[price]
+    Set Global Variable    ${GLOBAL_RANDOM_COST}            ${product}[cost]
+    Set Global Variable    ${GLOBAL_RANDOM_SKU}             ${product}[sku]
+    Set Global Variable    ${GLOBAL_RANDOM_BARCODE}         ${product}[barcode]
+    Set Global Variable    ${GLOBAL_RANDOM_WEIGHT}          ${product}[weight]
+    Set Global Variable    ${GLOBAL_RANDOM_STOCKQUANTITY}   ${product}[stock_quantity]
+    Set Global Variable    ${GLOBAL_RANDOM_INSTOCK}         ${product}[in_stock]
+
+# ============== ข้อมูลวันที่ ==============
+Random Date Data
+    [Documentation]    Generate date data and set global variables
+    [Arguments]    ${start_days_ago}=365    ${end_days_ago}=0
+    ${dates}=    Generate Date Range    ${start_days_ago}    ${end_days_ago}
+    
+    Set Global Variable    ${GLOBAL_RANDOM_STARTDATE}      ${dates}[start_date]
+    Set Global Variable    ${GLOBAL_RANDOM_ENDDATE}        ${dates}[end_date]
+    Set Global Variable    ${GLOBAL_RANDOM_RANDOMDATE}     ${dates}[random_date]
+    Set Global Variable    ${GLOBAL_RANDOM_DATETIME}       ${dates}[random_datetime]
