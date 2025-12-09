@@ -1,10 +1,47 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import os
+from pathlib import Path
 from .file_manager import scan_robot_project
 from .utils import get_file_icon
 from .ui_components import copy_button_component
 
+# =============================================================================
+# 🟢 HELPER FUNCTION TO LOAD HTML
+# =============================================================================
+def load_html_content(file_name):
+    """Reads HTML content from the assets folder"""
+    try:
+        # หา path ของไฟล์ assets/user_guide.html โดยอ้างอิงจากตำแหน่งไฟล์นี้
+        # สมมติโครงสร้าง:
+        # root/
+        #   assets/user_guide.html
+        #   modules/ui_sidebar.py
+        
+        base_dir = Path(__file__).parent.parent  # ถอยกลับไปที่ root folder (หรือ folder เหนือ modules)
+        file_path = base_dir / "assets" / file_name
+        
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        return f"<h3>Error loading guide: {e}</h3>"
+
+# =============================================================================
+# 🟢 DIALOG FUNCTION
+# =============================================================================
+@st.dialog("📘 Application Guide & Modules", width="large")
+def show_guide_dialog():
+    """Displays the Interactive Infographic in a modal dialog"""
+    # อ่านไฟล์ HTML ที่แยกไว้
+    html_content = load_html_content("user_guide.html")
+    
+    # แสดงผล (ปรับความสูงให้พอดี)
+    components.html(html_content, height=800, scrolling=True)
+
+
+# =============================================================================
+# 🟢 MAIN RENDER FUNCTION
+# =============================================================================
 def render_sidebar():
     """Render sidebar with project navigation"""
     with st.sidebar:
@@ -26,24 +63,18 @@ def render_sidebar():
                 if project_path:
                     st.session_state.project_path = project_path
                     st.session_state.project_structure = scan_robot_project(project_path)
-                    
-                    # ✅ รีเซ็ตการโหลด datasources และ locators
                     st.session_state.datasources_auto_loaded = False
                     st.session_state.locators_auto_loaded = False
                     st.session_state.project_keywords_auto_imported = False
-                    
                     st.rerun()
 
         with col2:
             if st.button("🔄 Clear", width='stretch', key="sidebar_clear"):
                 st.session_state.project_path = ""
                 st.session_state.project_structure = {}
-                
-                # ✅ รีเซ็ตการโหลด datasources และ locators
                 st.session_state.datasources_auto_loaded = False
                 st.session_state.locators_auto_loaded = False
                 st.session_state.project_keywords_auto_imported = False
-                
                 st.rerun()
 
         if st.session_state.project_structure and st.session_state.project_structure.get('folders'):
@@ -63,7 +94,6 @@ def render_sidebar():
                 """
                 st.markdown(path_html, unsafe_allow_html=True)
             with col2:
-                # ใช้ components.html เพื่อ render ปุ่ม copy (ความสูง 40px เพื่อความพอดี)
                 components.html(
                     copy_button_component(st.session_state.project_path, "copy_root_btn"),
                     height=40,
@@ -80,26 +110,21 @@ def render_sidebar():
             with col2:
                 st.metric("📄 Files", len(structure['robot_files']))
 
+        # === 🟢 NEW: Interactive User Guide Button ===
         st.markdown("---")
-        with st.expander("⚙️ Settings", expanded=False):
-            st.markdown("**Locator Priority:**")
-            st.caption("1️⃣ Unique ID")
-            st.caption("2️⃣ Unique Name")
-            st.caption("3️⃣ ID + Placeholder")
-            st.caption("4️⃣ FormControlName")
-            st.caption("5️⃣ Label-based")
-            st.caption("6️⃣ Display fields")
+        # ปุ่มสำหรับเปิด Dialog ที่อ่านไฟล์ HTML แยกมาแสดง
+        if st.button("📖 คู่มือการใช้งาน (Interactive Guide)", key="btn_open_guide", use_container_width=True, type="secondary"):
+            show_guide_dialog()
+        # =============================================
 
-        st.markdown("---")
         with st.expander("ℹ️ About", expanded=False):
-            st.caption("Version: 1.1.1")
+            st.caption("Version: 1.1.3")
             st.caption("Enhanced with modular backend")
-            st.caption("Separated frontend and backend")
-            st.caption("Enhanced with collapsible folders")
             st.caption("Professional dark theme")
+            st.caption("Guide/Tip Detail")
 
 def render_folder_tree(structure):
-    """Render beautiful collapsible folder tree - Redesigned"""
+    """Render beautiful collapsible folder tree"""
     root_path = structure['root']
     folders = structure['folders']
     robot_files = structure['robot_files']
@@ -147,7 +172,6 @@ def render_folder_tree(structure):
                 st.session_state.expanded_folders[folder_name] = not is_expanded
                 st.rerun()
             
-            # CSS เฉพาะสำหรับปุ่ม Folder ใน Sidebar (เพื่อความสวยงาม)
             st.markdown("""
             <style>
                 [data-testid="stSidebar"] button[kind="secondary"][key*="folder_btn_"] {

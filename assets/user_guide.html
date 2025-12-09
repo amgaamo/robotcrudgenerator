@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d1117; --card-bg: #161b22; --border-color: #30363d;
+            --accent-blue: #58a6ff; --accent-green: #3fb950; --accent-orange: #d29922; --accent-purple: #bc8cff;
+            --text-main: #f0f6fc; --text-sub: #8b949e;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg-color); color: var(--text-main);
+            margin: 0; padding: 20px; line-height: 1.5; font-size: 14px;
+        }
+        .hidden { display: none !important; }
+        .visible { display: block !important; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* --- Header --- */
+        .main-header { text-align: center; margin-bottom: 30px; }
+        .main-header h1 { 
+            font-size: 2.2rem; margin: 0; background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple)); 
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
+        }
+        .main-header p { color: var(--text-sub); margin-top: 5px; font-size: 1.1rem; }
+
+        /* --- Workflow Row --- */
+        .workflow-row { display: flex; gap: 15px; justify-content: center; margin-bottom: 40px; flex-wrap: wrap; }
+        .wf-step {
+            background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px;
+            padding: 15px; text-align: center; flex: 1; position: relative; min-width: 140px;
+        }
+        .wf-num {
+            background: rgba(88, 166, 255, 0.1); color: var(--accent-blue); width: 28px; height: 28px;
+            border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 0.9rem; margin-bottom: 8px; border: 1px solid var(--accent-blue);
+        }
+        .wf-title { font-weight: bold; color: var(--text-main); font-size: 1rem; margin-bottom: 4px; }
+        .wf-desc { font-size: 0.8rem; color: var(--text-sub); line-height: 1.3; }
+        
+        @media (min-width: 768px) {
+            .wf-step:not(:last-child)::after {
+                content: '→'; position: absolute; right: -12px; top: 50%; transform: translateY(-50%);
+                color: var(--border-color); font-size: 1.2rem; z-index: 1;
+            }
+        }
+
+        /* --- Main Grid --- */
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+        .module-card {
+            background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px;
+            padding: 20px; cursor: pointer; transition: transform 0.2s; position: relative;
+            display: flex; flex-direction: column; height: 100%;
+        }
+        .module-card:hover { transform: translateY(-3px); border-color: var(--accent-blue); }
+        .mc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); }
+        .mc-icon { 
+            width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;
+            background: rgba(255,255,255,0.05); 
+        }
+        .mc-title { font-weight: bold; font-size: 1.15rem; }
+        .mc-list { padding-left: 20px; margin: 0; color: var(--text-sub); font-size: 0.9rem; line-height: 1.6; }
+        .click-hint { font-size: 0.75rem; text-align: right; color: var(--accent-blue); margin-top: auto; padding-top: 15px; opacity: 0.7; font-weight: 600; }
+
+        /* --- Detail View Layout --- */
+        .detail-wrapper { max-width: 1000px; margin: 0 auto; }
+        
+        .btn-back {
+            background: none; border: none; color: var(--text-sub); cursor: pointer;
+            display: inline-flex; align-items: center; gap: 6px; font-size: 0.95rem; margin-bottom: 20px;
+            padding: 5px 10px; border-radius: 6px; transition: background 0.2s;
+        }
+        .btn-back:hover { color: var(--accent-blue); background: rgba(255,255,255,0.05); }
+
+        .detail-header {
+            display: flex; align-items: center; gap: 20px; margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid var(--border-color);
+        }
+        .dh-icon { font-size: 2.5rem; }
+        .dh-text h2 { margin: 0; font-size: 1.8rem; line-height: 1.2; }
+        .dh-text p { margin: 5px 0 0 0; color: var(--text-sub); font-size: 1.1rem; }
+
+        /* Paired Grid Layout */
+        .feature-pair-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 25px;
+        }
+        
+        .feature-block {
+            background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px;
+            padding: 25px; height: 100%; display: flex; flex-direction: column;
+        }
+        .feature-block h3 { 
+            margin-top: 0; margin-bottom: 15px; font-size: 1.2rem; display: flex; align-items: center; gap: 10px; 
+            border-bottom: 1px dashed var(--border-color); padding-bottom: 10px;
+        }
+        .feature-block p { color: var(--text-sub); font-size: 0.95rem; margin-bottom: 15px; flex-grow: 1; }
+        
+        .highlight-mini {
+            background: rgba(0,0,0,0.2); padding: 15px; border-radius: 10px; border-left: 4px solid; margin-top: auto; font-size: 0.9rem;
+        }
+        .highlight-mini ul { margin: 5px 0 0 0; padding-left: 18px; color: var(--text-main); }
+        .highlight-mini strong { display: block; margin-bottom: 5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* Theme Colors */
+        .t-blue { color: var(--accent-blue); } .bg-blue { border-color: var(--accent-blue); }
+        .t-orange { color: var(--accent-orange); } .bg-orange { border-color: var(--accent-orange); }
+        .t-purple { color: var(--accent-purple); } .bg-purple { border-color: var(--accent-purple); }
+        .t-green { color: var(--accent-green); } .bg-green { border-color: var(--accent-green); }
+
+        @media (max-width: 768px) {
+            .feature-pair-grid { grid-template-columns: 1fr; }
+            .workflow-row { flex-direction: column; }
+            .wf-step { min-width: auto; }
+            .wf-step:not(:last-child)::after { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="view-main" class="visible animate-view">
+        <div class="main-header">
+            <h1><i class="fas fa-robot"></i> Robot Framework Code Generator</h1>
+            <p>เปลี่ยน Tester ให้เป็น Test Designer: ลดงานถึก เพิ่มเวลาโฟกัสที่ Logic</p>
+        </div>
+
+        <div class="workflow-row">
+            <div class="wf-step">
+                <div class="wf-num">1</div><div class="wf-title">Setup</div>
+                <div class="wf-desc">เชื่อมต่อ Project Folder เพื่อโหลดงานเดิม</div>
+            </div>
+            <div class="wf-step">
+                <div class="wf-num">2</div><div class="wf-title">Assets</div>
+                <div class="wf-desc">เตรียม Locators และข้อมูลทดสอบ (CSV/API)</div>
+            </div>
+            <div class="wf-step">
+                <div class="wf-num">3</div><div class="wf-title">Generate</div>
+                <div class="wf-desc">สร้าง Keywords และ Test Flow อัตโนมัติ</div>
+            </div>
+            <div class="wf-step">
+                <div class="wf-num">4</div><div class="wf-title">Export</div>
+                <div class="wf-desc">ได้ไฟล์ .robot ที่สมบูรณ์พร้อมรันทันที</div>
+            </div>
+        </div>
+
+        <h3 style="border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 20px; font-size: 1.3rem;">
+            <i class="fas fa-cubes t-green"></i> Modules (คลิกเพื่อดูรายละเอียด)
+        </h3>
+        
+        <div class="grid">
+            <div class="module-card" onclick="switchView('detail-assets')" style="border-left: 4px solid var(--accent-blue);">
+                <div class="mc-header"><div class="mc-icon t-blue"><i class="fas fa-bullseye"></i></div><div class="mc-title">Assets Manager</div></div>
+                <div class="mc-body"><ul class="mc-list">
+                    <li>รวมศูนย์ Locators & Common Keywords</li>
+                    <li>HTML Parser แกะหน้าเว็บอัจฉริยะ</li>
+                    <li>Menu Locator Manager</li>
+                </ul></div>
+                <div class="click-hint">รายละเอียด →</div>
+            </div>
+            <div class="module-card" onclick="switchView('detail-data')" style="border-left: 4px solid var(--accent-orange);">
+                <div class="mc-header"><div class="mc-icon t-orange"><i class="fas fa-database"></i></div><div class="mc-title">Test Data</div></div>
+                <div class="mc-body"><ul class="mc-list">
+                    <li>Embedded CSV Creator/Editor</li>
+                    <li>Intelligent API Generator</li>
+                    <li>JSON-to-Arguments Auto Map</li>
+                </ul></div>
+                <div class="click-hint">รายละเอียด →</div>
+            </div>
+            <div class="module-card" onclick="switchView('detail-kw')" style="border-left: 4px solid var(--accent-purple);">
+                <div class="mc-header"><div class="mc-icon t-purple"><i class="fas fa-industry"></i></div><div class="mc-title">Keyword Factory</div></div>
+                <div class="mc-body"><ul class="mc-list">
+                    <li>Custom Keyword Builder</li>
+                    <li>Quick Templates (Fill/Verify)</li>
+                    <li>Legacy Auto-Import</li>
+                </ul></div>
+                <div class="click-hint">รายละเอียด →</div>
+            </div>
+            <div class="module-card" onclick="switchView('detail-crud')" style="border-left: 4px solid var(--accent-green);">
+                <div class="mc-header"><div class="mc-icon t-green"><i class="fas fa-rocket"></i></div><div class="mc-title">CRUD Generator</div></div>
+                <div class="mc-body"><ul class="mc-list">
+                    <li>Auto-Generate Test Cases</li>
+                    <li>Smart Context Input Dialog</li>
+                    <li>Real-time Code Preview</li>
+                </ul></div>
+                <div class="click-hint">รายละเอียด →</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="detail-assets" class="hidden detail-wrapper animate-view">
+        <button class="btn-back" onclick="switchView('view-main')"><i class="fas fa-arrow-left"></i> กลับหน้าหลัก</button>
+        <div class="detail-header">
+            <div class="dh-icon t-blue"><i class="fas fa-layer-group"></i></div>
+            <div class="dh-text"><h2 class="t-blue">Assets Manager</h2><p>รากฐานที่แข็งแกร่ง (The Intelligent Foundation)</p></div>
+        </div>
+        
+        <div class="feature-pair-grid">
+            <div class="feature-block">
+                <h3><i class="fas fa-eye"></i> Instant HTML Parser</h3>
+                <p>จบปัญหาการนั่งแกะ Code หน้าเว็บเองทีละบรรทัด เพียงก๊อปปี้ HTML มาวาง ระบบจะสแกนหา Element ทั้งหมดและแปลงเป็นตัวแปร Locator ที่พร้อมใช้งานทันที</p>
+                <div class="highlight-mini bg-blue">
+                    <strong class="t-blue">สิ่งที่น่าสนใจ:</strong>
+                    <ul>
+                        <li><b>Auto Naming:</b> ตั้งชื่อตัวแปรให้เป็นมาตรฐานเดียวกันทั้งทีม (e.g. <code>LOCATOR_LOGIN_BTN</code>)</li>
+                        <li><b>Framework Support:</b> รองรับ UI ยากๆ เช่น Ant Design หรือ Bootstrap ได้แม่นยำ</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="feature-block">
+                <h3><i class="fas fa-sync-alt"></i> Centralized Resource Hub</h3>
+                <p>ศูนย์กลางการจัดการไฟล์ Resource แก้ที่เดียวจบทุกที่ ไม่ต้องตามแก้หลายไฟล์ เปลี่ยนไฟล์ Resource กลางปุ๊บ ทุก Test Case อัปเดตทันที</p>
+                <div class="highlight-mini bg-blue">
+                    <strong class="t-blue">จุดเด่น:</strong>
+                    <ul>
+                        <li><b>Single Source of Truth:</b> ทีมงานทุกคนใช้ตัวแปรชุดเดียวกัน ลดความซ้ำซ้อน</li>
+                        <li><b>Menu Manager:</b> เครื่องมือพิเศษสำหรับจัดการ XPath เมนูที่มักจะซับซ้อน ให้ง่ายขึ้น</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="detail-data" class="hidden detail-wrapper animate-view">
+        <button class="btn-back" onclick="switchView('view-main')"><i class="fas fa-arrow-left"></i> กลับหน้าหลัก</button>
+        <div class="detail-header">
+            <div class="dh-icon t-orange"><i class="fas fa-database"></i></div>
+            <div class="dh-text"><h2 class="t-orange">Test Data Management</h2><p>เครื่องจักรขับเคลื่อนข้อมูล (The Data Engine)</p></div>
+        </div>
+
+        <div class="feature-pair-grid">
+            <div class="feature-block">
+                <h3><i class="fas fa-table"></i> Seamless CSV Workflow</h3>
+                <p>ลืม Excel ไปได้เลย สร้างและแก้ไขข้อมูลทดสอบในโปรแกรม แล้วกดใช้ใน Test Script ได้ทันที ข้อมูลไม่หาย ไม่ต้องย้ายไฟล์ไปมาให้วุ่นวาย</p>
+                <div class="highlight-mini bg-orange">
+                    <strong class="t-orange">ประโยชน์:</strong>
+                    <ul>
+                        <li><b>Auto-Save Path:</b> ไฟล์จะถูกบันทึกใน <code>resources/datatest</code> ที่ถูกต้องเสมอ</li>
+                        <li><b>Ready to Use:</b> เชื่อมโยงกับปุ่มเลือกข้อมูลในหน้าสร้าง Test Case ทันที</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="feature-block">
+                <h3><i class="fas fa-code"></i> Instant API Builder</h3>
+                <p>แค่มีตัวอย่าง JSON ก็สร้าง Test API ได้ทันที ไม่ต้องเขียนโครงสร้างเอง ระบบจัดการเรื่อง Arguments และ Validation ให้เสร็จสรรพ</p>
+                <div class="highlight-mini bg-orange">
+                    <strong class="t-orange">ความสามารถ:</strong>
+                    <ul>
+                        <li><b>One-Paste Generation:</b> วาง JSON ปุ๊บ ได้ Keyword ปั๊บ</li>
+                        <li><b>Auto-Validation:</b> แถมโค้ดตรวจสอบ Status Code 200 ให้ในตัว</li>
+                        <li><b>Smart Extract:</b> ดึงค่า Token/ID จาก Response มาใส่ตัวแปรให้ใช้อัตโนมัติ</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="detail-kw" class="hidden detail-wrapper animate-view">
+        <button class="btn-back" onclick="switchView('view-main')"><i class="fas fa-arrow-left"></i> กลับหน้าหลัก</button>
+        <div class="detail-header">
+            <div class="dh-icon t-purple"><i class="fas fa-industry"></i></div>
+            <div class="dh-text"><h2 class="t-purple">Keyword Factory</h2><p>โรงงานประกอบลอจิก (The Logic Assembler)</p></div>
+        </div>
+
+        <div class="feature-pair-grid">
+            <div class="feature-block">
+                <h3><i class="fas fa-puzzle-piece"></i> Visual Logic Builder</h3>
+                <p>สร้าง Logic ซับซ้อนได้เหมือนต่อ LEGO ลาก-วางลำดับการทำงานได้ตามใจชอบ ไม่ต้องกลัว Syntax Error จากการก๊อปวางโค้ดไปมา</p>
+                <div class="highlight-mini bg-purple">
+                    <strong class="t-purple">ข้อดี:</strong>
+                    <ul>
+                        <li><b>Drag & Drop:</b> ปรับลำดับขั้นตอนได้ง่ายๆ ด้วยเมาส์</li>
+                        <li><b>Legacy Support:</b> ดึง Keyword เก่าที่มีอยู่แล้วมาใช้ซ้ำได้ทันที (Reuse)</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="feature-block">
+                <h3><i class="fas fa-bolt"></i> Bulk Operation Templates</h3>
+                <p>งานซ้ำๆ จบในคลิกเดียว เช่น กรอกฟอร์มยาวๆ หรือเช็คค่าหลายจุด ระบบเจนโค้ดให้ครบทุกบรรทัดในพริบตา ประหยัดเวลาไปได้มหาศาล</p>
+                <div class="highlight-mini bg-purple">
+                    <strong class="t-purple">แม่แบบยอดนิยม:</strong>
+                    <ul>
+                        <li><b>Quick Fill:</b> เลือก 20 ช่อง ระบบสร้าง 20 บรรทัดสำหรับกรอกข้อมูลให้ทันที</li>
+                        <li><b>Quick Verify:</b> เลือก Field ที่ต้องการตรวจสอบ ระบบสร้าง Step เช็คค่าให้ครบ</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="detail-crud" class="hidden detail-wrapper animate-view">
+        <button class="btn-back" onclick="switchView('view-main')"><i class="fas fa-arrow-left"></i> กลับหน้าหลัก</button>
+        <div class="detail-header">
+            <div class="dh-icon t-green"><i class="fas fa-rocket"></i></div>
+            <div class="dh-text"><h2 class="t-green">CRUD Generator</h2><p>สถาปนิกสร้างเทสเคส (The Master Architect)</p></div>
+        </div>
+
+        <div class="feature-pair-grid">
+            <div class="feature-block">
+                <h3><i class="fas fa-sitemap"></i> Standardized Structure</h3>
+                <p>บังคับโครงสร้างมาตรฐาน Setup -> Action -> Verify -> Teardown ให้เป็นนิสัย ทำให้ Test Case ของทุกคนในทีมหน้าตาเหมือนกัน อ่านง่าย และดูแลรักษาง่าย</p>
+                <div class="highlight-mini bg-green">
+                    <strong class="t-green">โครงสร้าง 4 ระยะ:</strong>
+                    <ul style="display:grid; grid-template-columns:1fr 1fr; gap:5px;">
+                        <li>1. <b>Setup:</b> เตรียมระบบ</li><li>2. <b>Actions:</b> ทำรายการ</li>
+                        <li>3. <b>Verify:</b> ตรวจสอบผล</li><li>4. <b>Teardown:</b> คืนค่า</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="feature-block">
+                <h3><i class="fas fa-magic"></i> Context-Aware Assistance</h3>
+                <p>ปุ่มวิเศษที่รู้ใจ ในช่องกรอกข้อมูล แค่กดปุ่มก็มีรายการ Locator หรือ CSV มาให้เลือก ไม่ต้องจำชื่อตัวแปรแม้แต่ตัวเดียว ลดความผิดพลาดจาก Human Error</p>
+                <div class="highlight-mini bg-green">
+                    <strong class="t-green">ความสามารถ:</strong>
+                    <ul>
+                        <li><b>Smart Select:</b> เลือก Locator จาก List (ดึงจาก Assets อัตโนมัติ)</li>
+                        <li><b>Data Injection:</b> เลือกข้อมูล CSV ระบบสร้าง Syntax <code>${DATA}</code> ให้เอง</li>
+                        <li><b>Live Preview:</b> เห็นผลลัพธ์โค้ดจริงทันทีที่ขยับเมาส์</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchView(targetId) {
+            document.querySelectorAll('.detail-wrapper, #view-main').forEach(v => {
+                v.classList.remove('visible'); v.classList.add('hidden');
+            });
+            document.getElementById(targetId).classList.remove('hidden');
+            document.getElementById(targetId).classList.add('visible');
+            window.scrollTo(0, 0);
+        }
+    </script>
+</body>
+</html>
