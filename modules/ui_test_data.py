@@ -289,8 +289,12 @@ def data_source_export_dialog(source, index):
         if not (ds_name and csv_file and col_name): st.error("Missing Info"); return
         
         name_upper = ds_name.replace(" ", "").upper()
-        var_name = f"CSVPATH_{name_upper}"
-        kw_name = f"Import DataSource {ds_name.upper()}"
+        
+        kw_suffix = ds_name.upper()
+        if kw_suffix.startswith("DS_"):
+            kw_suffix = kw_suffix[3:]  # ตัด 'DS_' (3 ตัวอักษร) ออก
+        var_name = f"CSVPATH_{kw_suffix}"    
+        kw_name = f"Import DataSource {kw_suffix}"
         col_var = col_name 
         ds_var = f"{name_upper}" 
         

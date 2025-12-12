@@ -326,8 +326,6 @@ def render_keyword_editor_view(ws):
                 st.session_state['kw_factory_add_dialog_context'] = {"key": keyword_id}
                 st.rerun()
 
-        # --- 3. Step Editor ---
-        st.markdown("---") # เพิ่มเส้นคั่น
         
         # Toggle for drag & drop mode
         col_title, col_toggle = st.columns([3, 1])
@@ -701,11 +699,7 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
                             st.session_state[temp_args_key][clean_arg_name] = arg_info.get('default', '')
                 # Update previous keyword tracking
                 st.session_state[f"prev_kw_kw_{step['id']}"] = selected_kw_name
-                # Don't rerun here, let rendering continue
-            else:
-                # For API/CSV steps, use the existing keyword name (no dropdown)
-                selected_kw_name = step.get('keyword', '')
-                selected_kw = None  # API/CSV don't have keyword definitions in all_kws
+
         # --- Render Inputs based on Selected Keyword ---
         if selected_kw_name == 'IF Condition':
              st.markdown("**Condition:**")
@@ -756,8 +750,24 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
                     )
                     
                     if selected_ds != current_ds:
-                        step['config'] = csv_keywords[selected_ds]
-                        step['keyword'] = f"Import DataSource {selected_ds}"
+                        new_config = csv_keywords[selected_ds].copy()
+                        new_config['ds_name'] = selected_ds # <--- เพิ่มบรรทัดนี้
+                        step['config'] = new_config
+                        
+                        # --- 🎯 แก้ไขใหม่: ใช้ Logic เดียวกับตอน Add ---
+                        clean_ds_name = selected_ds.upper()
+                        
+                        # 1. ตัด DS_ ออกถ้ามี
+                        if clean_ds_name.startswith("DS_"):
+                            clean_ds_name = clean_ds_name[3:]
+                        
+                        clean_ds_name = clean_ds_name.strip()
+
+                        # 2. ถ้าชื่อที่เหลือคือ "LOGIN" ให้เปลี่ยนเป็น "USER LOGIN"
+                        if clean_ds_name == "LOGIN":
+                            clean_ds_name = "USER LOGIN"
+                        
+                        step['keyword'] = f"Import DataSource {clean_ds_name}"
                 
                 st.info("📊 CSV Data Sources don't require arguments.")
             
@@ -854,8 +864,11 @@ def render_step_card_compact_for_kw(step, index, keyword_id, steps_list, indent_
                     ws_state,
                     input_key,
                     current_value=current_value,
-                    selected_kw_name=selected_kw.get('name') # <--- Pass selected keyword name
+                    selected_kw_name=selected_kw.get('name') 
                 )
+                
+                if rendered_value is not None:
+                    st.session_state[temp_args_key][clean_arg_name] = rendered_value
 
                 # --- Argument Suggestion Logic ---
                 show_suggestion = False
@@ -1230,10 +1243,28 @@ def render_kw_factory_api_csv_step_dialog():
                     ds_name, ds_info = items[i + j]
                     with cols[j]:
                         if st.button(f"📊 {ds_name}", key=f"kw_csv_{ds_name}", use_container_width=True):
-                            keyword_name = f"Import DataSource {ds_name}"
+                            # --- 🎯 แก้ไขใหม่: ตัด DS_ และแปลง LOGIN เป็น USER LOGIN ---
+                            clean_ds_name = ds_name.upper() # ทำเป็นตัวพิมพ์ใหญ่เพื่อเช็ค
+                            
+                            # 1. ตัด DS_ ออกถ้ามี
+                            if clean_ds_name.startswith("DS_"):
+                                clean_ds_name = clean_ds_name[3:]
+                            
+                            clean_ds_name = clean_ds_name.strip()
+
+                            # 2. ถ้าชื่อที่เหลือคือ "LOGIN" ให้เปลี่ยนเป็น "USER LOGIN"
+                            if clean_ds_name == "LOGIN":
+                                clean_ds_name = "USER LOGIN"
+                            
+                            # 3. ประกอบร่าง Keyword
+                            keyword_name = f"Import DataSource {clean_ds_name}"
+
+                            final_config = ds_info.copy()
+                            final_config['ds_name'] = ds_name
+
                             new_step = {
                                 "id": str(uuid.uuid4()), "keyword": keyword_name, "args": {},
-                                "type": "csv_import", "config": ds_info
+                                "type": "csv_import", "config": final_config
                             }
                             kw_manager.add_step(keyword_id, new_step)
                             close_dialog()

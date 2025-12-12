@@ -198,7 +198,7 @@ def _generate_verify_list_create(all_keywords, all_locators, ws):
         loc_view = find_locator(all_locators, ['VIEW_BTN', 'EDIT_BTN'])
         # (MODIFIED) Append to 'nav' list
         steps['nav'].append(create_step(kw_click['name'], {
-            'locator': loc_view['name'] if loc_view else 'LOCATOR_VIEW_BTN'
+            'locator_field': loc_view['name'] if loc_view else 'LOCATOR_VIEW_BTN'
         }))
     
     return steps # <-- Return dict
